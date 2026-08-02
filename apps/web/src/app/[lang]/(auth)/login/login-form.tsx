@@ -139,7 +139,12 @@ export function LoginForm({
             label={t.password}
             name="password"
             autoComplete="current-password"
-            dir="ltr"
+            // Deliberately NOT dir="ltr" (unlike the email field above). Forcing
+            // the input to LTR makes its logical padding resolve against LTR
+            // while the reveal button's inset resolves against the RTL page —
+            // the eye ends up on the left with the clearance reserved on the
+            // right, overlapping the text. The value is masked anyway, so there
+            // is nothing for LTR to protect here.
             placeholder="••••••••••••"
             revealable
             revealLabels={{ show: common.showPassword, hide: common.hidePassword }}

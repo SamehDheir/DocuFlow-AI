@@ -259,7 +259,9 @@ export function RegisterForm({
                       label={t.password}
                       name="new-password"
                       autoComplete="new-password"
-                      dir="ltr"
+                      // See login-form: no dir="ltr" on password fields, or the
+                      // reveal button and its clearance land on opposite sides
+                      // in RTL.
                       revealable
                       revealLabels={{ show: common.showPassword, hide: common.hidePassword }}
                       placeholder={t.passwordPlaceholder}
