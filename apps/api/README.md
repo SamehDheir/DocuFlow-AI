@@ -11,8 +11,8 @@ npm run prisma:migrate:deploy --workspace=@docuflow/api  # apply schema
 npm run dev --workspace=@docuflow/api                    # watch mode, :3001
 ```
 
-| Command                                                       | Does                            |
-| ------------------------------------------------------------- | ------------------------------- |
+| Command                                                        | Does                            |
+| -------------------------------------------------------------- | ------------------------------- |
 | `npm run test --workspace=@docuflow/api`                       | Unit tests (`src/**/*.spec.ts`) |
 | `npm run test:e2e --workspace=@docuflow/api`                   | E2E — needs infra running       |
 | `npm run prisma:generate --workspace=@docuflow/api`            | Regenerate the client           |
