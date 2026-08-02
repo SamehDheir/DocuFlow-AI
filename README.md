@@ -146,6 +146,31 @@ harmlessly while `apps/` is empty.
 
 ---
 
+## Branching
+
+git-flow. `develop` is the integration branch — everything branches from it and
+merges back into it. `main` holds production and receives releases only.
+
+```
+main                 tagged releases only; every merge publishes images to GHCR
+  └── develop        integration branch — branch from here
+        ├── feature/…
+        ├── fix/…
+        ├── chore/…
+        └── docs/…
+```
+
+```bash
+git checkout develop && git pull origin develop
+git checkout -b feature/document-upload
+# …then open a PR into develop
+```
+
+Never commit directly to `main` or `develop`. Full conventions — naming, commit
+format, release and hotfix procedure — are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
 ## CI/CD
 
 ### `ci.yml` — every pull request and push to `main`/`develop`
@@ -180,32 +205,32 @@ so deployment is the manual step below.
 
 ## One-time GitHub setup
 
-The repository is initialised locally with an initial commit on `main`. To
-publish it:
+In the repository settings:
 
-```bash
-# Create an empty repo on GitHub first (no README/licence/.gitignore),
-# then point this repo at it:
-git remote add origin https://github.com/<owner>/<repo>.git
-git push -u origin main
-```
-
-Then, in the repository settings:
-
-1. **Branch protection** on `main` — require pull requests, and require the
-   status check named **`CI OK`** (only this one).
-2. **Actions → General → Workflow permissions** — confirm `GITHUB_TOKEN` may
+1. **Default branch → `develop`** (Settings → General → Default branch). This
+   matters beyond convenience: new pull requests target the default branch, and
+   **Dependabot reads `.github/dependabot.yml` from the default branch only**.
+   Until this is changed, Dependabot keeps using the copy on `main` and keeps
+   opening PRs against `main`, regardless of the `target-branch` setting.
+2. **Branch protection** on **both** `main` and `develop` — require pull
+   requests, and require the status check named **`CI OK`** (only this one; see
+   the CI/CD section for why).
+3. **Actions → General → Workflow permissions** — confirm `GITHUB_TOKEN` may
    write packages, so `release.yml` can push to GHCR.
-3. **Packages** — images are private by default. Make them public from the
+4. **Packages** — images are private by default. Make them public from the
    package settings if you want them pullable without authentication.
-4. **`.github/CODEOWNERS`** — replace `@your-github-username` and uncomment to
+5. **`.github/CODEOWNERS`** — replace `@your-github-username` and uncomment to
    enable automatic review requests.
-5. **`.github/ISSUE_TEMPLATE/config.yml`** — replace `OWNER/REPO` in the security
+6. **`.github/ISSUE_TEMPLATE/config.yml`** — replace `OWNER/REPO` in the security
    advisory link.
-6. Add a CI badge to the top of this file:
+7. Add a CI badge to the top of this file:
    ```markdown
-   [![CI](https://github.com/<owner>/<repo>/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/ci.yml)
+   [![CI](https://github.com/SamehDheir/DocuFlow-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/SamehDheir/DocuFlow-AI/actions/workflows/ci.yml)
    ```
+
+Any Dependabot pull requests opened before step 1 still target `main`. Either
+retarget them in the GitHub UI, or close them and let the next scheduled run
+reopen them against `develop`.
 
 **Note on `gitleaks`:** free for public repositories and personal accounts. Under
 a GitHub _organisation_ it requires a `GITLEAKS_LICENSE` secret and the job will

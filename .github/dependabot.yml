@@ -1,5 +1,12 @@
 version: 2
 
+# Every update PR targets `develop`, not `main` — main receives releases only
+# (see CONTRIBUTING.md "Branching model").
+#
+# IMPORTANT: Dependabot reads this file from the repository's DEFAULT branch.
+# Until `develop` is set as the default branch on GitHub, Dependabot keeps using
+# the copy on `main` and will keep opening PRs against `main`.
+
 updates:
   # ----------------------------------------------------------------------------
   # npm — one entry covers the whole workspace. Dependabot reads the root
@@ -11,6 +18,7 @@ updates:
   # ----------------------------------------------------------------------------
   - package-ecosystem: npm
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -30,6 +38,7 @@ updates:
   # ----------------------------------------------------------------------------
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -46,6 +55,7 @@ updates:
   - package-ecosystem: docker
     directories:
       - /docker
+    target-branch: develop
     schedule:
       interval: weekly
       day: monday
