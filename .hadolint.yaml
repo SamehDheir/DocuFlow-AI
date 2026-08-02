@@ -1,0 +1,17 @@
+# hadolint configuration — see https://github.com/hadolint/hadolint
+
+ignored:
+  # DL3018: "Pin versions in apk add".
+  #
+  # Ignored deliberately. Alpine's repositories carry only the current version of
+  # each package and drop older ones, so a pinned `apk add dumb-init=1.2.5-r2`
+  # starts failing the moment Alpine bumps the package. The reproducibility that
+  # pinning is meant to buy comes instead from the pinned base image digest and
+  # the committed package-lock.json.
+  - DL3018
+
+failure-threshold: warning
+
+trustedRegistries:
+  - docker.io
+  - ghcr.io

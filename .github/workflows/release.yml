@@ -1,0 +1,131 @@
+name: Release
+
+# Builds container images and publishes them to GitHub Container Registry.
+#
+# Triggers on merges to main (tagged `main` + `sha-<short>`) and on version tags
+# such as v1.2.3 (tagged `1.2.3`, `1.2`, `latest`).
+#
+# This workflow PUBLISHES ONLY. It does not deploy anywhere — pulling a new image
+# onto a host is a documented manual step in README.md ("Deploying"). That is a
+# deliberate choice: automatic deployment needs a target host and credentials
+# that do not exist yet.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Build the image matrix from apps that actually exist. Emitting the matrix
+  # dynamically (rather than a static list plus per-job skips) is what keeps this
+  # workflow valid while apps/ is still empty: an empty matrix is guarded by
+  # `any`, and a job-level `if` cannot read the matrix context.
+  # ----------------------------------------------------------------------------
+  detect:
+    name: Detect buildable images
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
+      any: ${{ steps.build-matrix.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: build-matrix
+        run: |
+          entries=""
+
+          if [ -f apps/api/package.json ]; then
+            entries="{\"app\":\"api\",\"dockerfile\":\"docker/api.Dockerfile\"}"
+          fi
+
+          if [ -f apps/web/package.json ]; then
+            [ -n "$entries" ] && entries="${entries},"
+            entries="${entries}{\"app\":\"web\",\"dockerfile\":\"docker/web.Dockerfile\"}"
+          fi
+
+          if [ -z "$entries" ]; then
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo "::notice::No applications found in apps/ — nothing to publish yet."
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"include\":[${entries}]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build & push ${{ matrix.app }}
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Automatically provided; no PAT needed for same-repo publishing.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # GHCR rejects uppercase image names and GitHub usernames may contain
+          # capitals. No manual lowercasing is needed here: metadata-action
+          # normalises the `images` input to lowercase itself.
+          images: ghcr.io/${{ github.repository_owner }}/docuflow-${{ matrix.app }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache persisted in GitHub Actions cache. `mode=max` also caches
+          # intermediate stages, which matters for multi-stage builds where the
+          # dependency install is the slow part.
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+          # linux/amd64 only. Adding linux/arm64 roughly doubles build time, so
+          # enable it only if you actually deploy to ARM hosts:
+          #   platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published \`${{ matrix.app }}\`"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

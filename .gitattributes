@@ -1,0 +1,28 @@
+# Normalize line endings to LF in the repository.
+# Without this, committing from Windows ships CRLF into Linux containers,
+# which breaks shell scripts and Docker entrypoints at runtime.
+* text=auto eol=lf
+
+# Scripts that run inside containers must always be LF.
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary — never diff or convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Generated — collapse in PR diffs.
+package-lock.json linguist-generated=true -diff

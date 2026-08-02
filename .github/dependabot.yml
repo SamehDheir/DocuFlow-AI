@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  # ----------------------------------------------------------------------------
+  # npm — one entry covers the whole workspace. Dependabot reads the root
+  # package-lock.json, so apps/* and packages/* are included automatically.
+  #
+  # Minor and patch updates are grouped into a single PR per week. Ungrouped,
+  # a monorepo this size generates enough noise that the PRs stop getting read.
+  # Major updates stay separate because they need individual attention.
+  # ----------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+
+  # ----------------------------------------------------------------------------
+  # GitHub Actions — third-party actions are executable code with access to the
+  # workflow token, so keeping them current is a security concern, not hygiene.
+  # ----------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+
+  # ----------------------------------------------------------------------------
+  # Docker base images referenced by docker/*.Dockerfile.
+  # ----------------------------------------------------------------------------
+  - package-ecosystem: docker
+    directories:
+      - /docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    commit-message:
+      prefix: "chore(docker)"

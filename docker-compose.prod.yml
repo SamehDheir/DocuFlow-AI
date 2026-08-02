@@ -1,0 +1,140 @@
+# Production-style stack: backing services PLUS containerised apps behind nginx.
+#
+# STATUS: TEMPLATE — depends on apps/api and apps/web, which do not exist yet.
+# It will not start until those are scaffolded and their Dockerfiles build.
+#
+# This is a single-host deployment (one Docker Engine, one nginx). It is a
+# reasonable target for a VPS. It is NOT highly available: no replication, no
+# failover, and Postgres/MinIO data live on this host's volumes, so backups are
+# your responsibility.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Every secret below is REQUIRED with no default — compose fails fast if one is
+# missing, rather than silently starting production with a dev password.
+
+name: docuflow-prod
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No published ports: reachable only from the compose network.
+    networks: [docuflow]
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD:?required}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    networks: [docuflow]
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?required}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [docuflow]
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: ${API_IMAGE:-ghcr.io/OWNER/docuflow-api:latest}
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-docuflow-documents}
+      JWT_SECRET: ${JWT_SECRET:?required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?required}
+      AI_PROVIDER: ${AI_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [docuflow]
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        # Baked into the client bundle at build time — see web.Dockerfile.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    image: ${WEB_IMAGE:-ghcr.io/OWNER/docuflow-web:latest}
+    restart: always
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+    networks: [docuflow]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - api
+      - web
+    networks: [docuflow]
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  nginx-logs:
+
+networks:
+  docuflow:
+    driver: bridge

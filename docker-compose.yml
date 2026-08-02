@@ -1,0 +1,168 @@
+# Local development infrastructure for DocuFlow AI.
+#
+# This file provisions BACKING SERVICES ONLY (database, cache, object storage).
+# The api/ and web/ applications are expected to run on the host via
+# `npm run dev` so you keep hot reload and a native debugger. Containerised
+# builds of the apps live in docker-compose.prod.yml.
+#
+#   npm run infra:up      start everything
+#   npm run infra:logs    tail logs
+#   npm run infra:reset   destroy volumes and start clean
+#
+# Optional extras are behind profiles so the default start stays lean:
+#   docker compose --profile tools up -d      adds Adminer + Redis Commander
+#   docker compose --profile mail up -d       adds Mailpit
+
+name: docuflow
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — pgvector image because the AI module stores embeddings in the
+  # same database (see PROJECT_DOCUMENTATION.md §5). Using the extension image
+  # from day one avoids a painful migration when the AI phase starts.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: docuflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-docuflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuflow_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-docuflow}
+      # Deterministic collation keeps index behaviour identical across machines.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, only when the data volume is empty.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-docuflow} -d ${POSTGRES_DB:-docuflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [docuflow]
+
+  # ---------------------------------------------------------------------------
+  # Redis — BullMQ queues (OCR, AI, thumbnails) plus session/cache storage.
+  # BullMQ requires maxmemory-policy=noeviction: under any eviction policy Redis
+  # may drop job keys and silently lose queued work.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: docuflow-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD:-docuflow_dev_password}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-docuflow_dev_password}
+    networks: [docuflow]
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object storage. Document bytes live here; Postgres
+  # holds only metadata and the storage_key reference (PROJECT_DOCUMENTATION.md §13).
+  # API on 9000, web console on 9001.
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: docuflow-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuflow}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuflow_dev_password}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [docuflow]
+
+  # ---------------------------------------------------------------------------
+  # One-shot bucket provisioning. Runs after MinIO is healthy, creates the
+  # documents bucket, then exits 0. `docker compose ps` showing this as "exited"
+  # is the expected steady state.
+  #
+  # Versioning is enabled because document_versions references immutable object
+  # keys; without it a re-upload could clobber a historical version's bytes.
+  # ---------------------------------------------------------------------------
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    container_name: docuflow-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuflow}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuflow_dev_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-docuflow-documents}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing local/\"$$MINIO_BUCKET\" &&
+      mc version enable local/\"$$MINIO_BUCKET\" &&
+      echo 'MinIO ready: bucket '\"$$MINIO_BUCKET\"' created with versioning enabled'
+      "
+    networks: [docuflow]
+
+  # ---------------------------------------------------------------------------
+  # Optional developer tools — `--profile tools`
+  # ---------------------------------------------------------------------------
+  adminer:
+    image: adminer:5
+    container_name: docuflow-adminer
+    restart: unless-stopped
+    profiles: [tools]
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [docuflow]
+
+  # ---------------------------------------------------------------------------
+  # Optional mail catcher — `--profile mail`
+  # Captures password-reset and notification mail locally instead of sending it.
+  # SMTP on 1025, web UI on 8025.
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: docuflow-mailpit
+    restart: unless-stopped
+    profiles: [mail]
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    networks: [docuflow]
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+networks:
+  docuflow:
+    driver: bridge

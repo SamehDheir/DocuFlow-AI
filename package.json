@@ -1,0 +1,31 @@
+{
+  "name": "docuflow-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise AI document management platform — multi-tenant SaaS",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "node scripts/run-workspaces.mjs lint",
+    "typecheck": "node scripts/run-workspaces.mjs typecheck",
+    "test": "node scripts/run-workspaces.mjs test",
+    "build": "node scripts/run-workspaces.mjs build",
+    "dev": "node scripts/run-workspaces.mjs dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:reset": "docker compose down -v && docker compose up -d",
+    "infra:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  }
+}

@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose new functionality
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't be done today, and who does that affect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Which release does this belong to?
+      description: See PROJECT_DOCUMENTATION.md §16-17. Keeping MVP scope tight is deliberate.
+      options:
+        - MVP (v1) — auth, folders, upload/download, dashboard
+        - v2 — OCR, AI summary, smart search, notifications, workflow
+        - v3 — mobile, external API, integrations, billing
+        - Unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Primary user role
+      options:
+        - Super Admin
+        - Company Admin
+        - Department Manager
+        - Employee
+        - Guest
+        - Multiple / All
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

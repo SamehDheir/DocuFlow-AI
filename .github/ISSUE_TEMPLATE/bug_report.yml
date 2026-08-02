@@ -1,0 +1,74 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If this is a **security vulnerability**, do not file it
+        here — see SECURITY.md for private disclosure.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: Describe the actual behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Log in as ...
+        2. Upload ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Authentication
+        - Documents / Upload
+        - Storage (MinIO)
+        - Search
+        - AI / OCR
+        - Permissions / Roles
+        - Infrastructure / CI
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit SHA
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: tenancy
+    attributes:
+      label: Multi-tenancy
+      options:
+        - label: This bug involves data from one company appearing in another
+          required: false

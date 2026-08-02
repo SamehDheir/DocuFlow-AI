@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+package-lock.json
+
+# Generated Prisma client
+**/generated/
+
+# Authored spec — left byte-for-byte as written. Prettier would reflow the
+# mixed Arabic/English markdown and produce a large, meaningless diff.
+PROJECT_DOCUMENTATION.md
+
+# nginx config is not a format Prettier understands
+docker/nginx/nginx.conf

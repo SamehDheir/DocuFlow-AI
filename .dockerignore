@@ -1,0 +1,45 @@
+# Keep the build context small and prevent host artefacts leaking into images.
+
+.git/
+.github/
+node_modules/
+**/node_modules/
+
+# Build output — always rebuilt inside the image.
+dist/
+build/
+.next/
+out/
+**/dist/
+**/build/
+**/.next/
+
+# Secrets must never enter the build context. Anything copied in is recoverable
+# from the image layers even if a later RUN deletes it.
+.env
+.env.*
+!.env.example
+
+# Tests and coverage are not needed in a production image.
+coverage/
+**/coverage/
+**/*.spec.ts
+**/*.test.ts
+**/__tests__/
+
+# Docs
+*.md
+!README.md
+docs/
+
+# Local tooling
+.vscode/
+.idea/
+.editorconfig
+.prettierrc
+.prettierignore
+docker-compose*.yml
+Dockerfile*
+**/*.log
+.DS_Store
+Thumbs.db

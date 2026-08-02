@@ -1,0 +1,267 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# Superseded runs on the same branch are pointless; cancel them.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # The repository currently has no application code. Rather than fail on a
+  # missing apps/api or apps/web, detect what exists and let the dependent jobs
+  # skip. As each app is scaffolded its jobs activate automatically with no
+  # workflow edit required.
+  # ----------------------------------------------------------------------------
+  detect:
+    name: Detect workspaces
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.check.outputs.api }}
+      web: ${{ steps.check.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: Check which apps exist
+        run: |
+          if [ -f apps/api/package.json ]; then
+            echo "api=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/api not found — API jobs skipped."
+          fi
+
+          if [ -f apps/web/package.json ]; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/web not found — web jobs skipped."
+          fi
+
+  # ----------------------------------------------------------------------------
+  # Repository-wide checks that do not depend on application code. These are the
+  # jobs that carry real weight until apps/ is populated.
+  # ----------------------------------------------------------------------------
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint GitHub Actions workflows
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: Validate development compose file
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate production compose file
+        # Production compose uses `${VAR:?required}` so it fails fast on missing
+        # secrets. Validation therefore needs placeholders — these are throwaway
+        # values that only prove the file parses.
+        env:
+          POSTGRES_USER: validate
+          POSTGRES_PASSWORD: validate
+          POSTGRES_DB: validate
+          REDIS_PASSWORD: validate
+          MINIO_ROOT_USER: validate
+          MINIO_ROOT_PASSWORD: validate
+          JWT_SECRET: validate
+          JWT_REFRESH_SECRET: validate
+        run: docker compose -f docker-compose.prod.yml config --quiet
+
+  dockerfiles:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - docker/api.Dockerfile
+          - docker/web.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run hadolint on ${{ matrix.dockerfile }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          # Rule exclusions live in .hadolint.yaml alongside their rationale.
+          config: .hadolint.yaml
+
+  # ----------------------------------------------------------------------------
+  # Secret scanning. Runs on every PR because a leaked credential is cheapest to
+  # deal with before it reaches main.
+  #
+  # NOTE: gitleaks-action is free for public repositories and personal accounts.
+  # Under a GitHub *organisation* it requires GITLEAKS_LICENSE, and without one
+  # this job fails. If you move this repo into an org, either add the secret or
+  # replace this with `docker run zricethezav/gitleaks:latest detect`, which has
+  # no such restriction.
+  # ----------------------------------------------------------------------------
+  security:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the scan covers every commit in the PR, not just the tip.
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ----------------------------------------------------------------------------
+  # NestJS API. Skipped until apps/api exists.
+  # ----------------------------------------------------------------------------
+  api:
+    name: API
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector image, matching development — a plain postgres image would
+        # pass CI and then fail on the first migration that uses vector columns.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: docuflow
+          POSTGRES_PASSWORD: docuflow_test
+          POSTGRES_DB: docuflow_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U docuflow -d docuflow_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://docuflow:docuflow_test@localhost:5432/docuflow_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_test_secret_not_used_outside_ci
+      JWT_REFRESH_SECRET: ci_test_refresh_secret_not_used_outside_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace=@docuflow/api --if-present
+
+      - name: Apply migrations
+        # `migrate deploy` applies committed migrations exactly as production
+        # would. `db push` is deliberately avoided: it would mask a broken or
+        # missing migration by deriving the schema straight from schema.prisma.
+        run: npm run prisma:migrate:deploy --workspace=@docuflow/api --if-present
+
+      - name: Lint
+        run: npm run lint --workspace=@docuflow/api --if-present
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=@docuflow/api --if-present
+
+      - name: Test
+        run: npm run test --workspace=@docuflow/api --if-present
+
+      - name: Build
+        run: npm run build --workspace=@docuflow/api
+
+  # ----------------------------------------------------------------------------
+  # Next.js web. Skipped until apps/web exists.
+  # ----------------------------------------------------------------------------
+  web:
+    name: Web
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --workspace=@docuflow/web --if-present
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=@docuflow/web --if-present
+
+      - name: Test
+        run: npm run test --workspace=@docuflow/web --if-present
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+        run: npm run build --workspace=@docuflow/web
+
+  # ----------------------------------------------------------------------------
+  # Single aggregate status for branch protection.
+  #
+  # Protecting the individual jobs above would deadlock: a skipped job never
+  # reports, so a required check that never runs blocks every merge. This gate
+  # always runs and treats "skipped" as acceptable while failing on any real
+  # failure or cancellation.
+  # ----------------------------------------------------------------------------
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [static, dockerfiles, security, api, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "One or more CI jobs did not succeed."
+          exit 1
+
+      - name: Success
+        run: echo "All CI jobs passed or were skipped."

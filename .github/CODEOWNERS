@@ -1,0 +1,18 @@
+# Code owners are requested for review automatically on matching paths.
+#
+# DISABLED until a real GitHub username is filled in. GitHub silently ignores
+# CODEOWNERS entries that reference an account without repository access, so an
+# incorrect username here looks configured but does nothing.
+#
+# To enable: replace @your-github-username below and uncomment the rules.
+
+# Default owner for everything
+# *                       @your-github-username
+
+# Infrastructure and CI — changes here affect every deployment
+# /.github/               @your-github-username
+# /docker/                @your-github-username
+# docker-compose*.yml     @your-github-username
+
+# Database schema and migrations — irreversible once applied in production
+# /apps/api/prisma/       @your-github-username
