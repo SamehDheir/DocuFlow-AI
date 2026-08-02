@@ -11,7 +11,9 @@ interface TextFieldProps extends React.ComponentPropsWithoutRef<'input'> {
   hint?: string;
   /** Adds a show/hide control. Use for password inputs. */
   revealable?: boolean;
-  /** Rendered inside the field, right-aligned — e.g. a "Forgot?" link. */
+  /** Translated labels for the reveal control. Required when `revealable`. */
+  revealLabels?: { show: string; hide: string };
+  /** Rendered inside the field, end-aligned — e.g. a "Forgot?" link. */
   action?: React.ReactNode;
 }
 
@@ -21,6 +23,7 @@ export function TextField({
   error,
   hint,
   revealable = false,
+  revealLabels,
   action,
   className,
   type = 'text',
@@ -66,7 +69,7 @@ export function TextField({
             error
               ? 'border-danger-border focus:border-danger focus:shadow-[0_0_0_3px_var(--color-danger-subtle)]'
               : 'border-border',
-            revealable && 'pr-11',
+            revealable && 'pe-11',
             className,
           )}
           {...props}
@@ -78,10 +81,10 @@ export function TextField({
             onClick={() => setRevealed((v) => !v)}
             // Sits inside the field; label it so it is not announced as an
             // unnamed button between the input and the next control.
-            aria-label={revealed ? 'Hide password' : 'Show password'}
+            aria-label={revealed ? revealLabels?.hide : revealLabels?.show}
             aria-pressed={revealed}
             className={cn(
-              'absolute top-1/2 right-1 -translate-y-1/2 rounded-md p-2',
+              'absolute top-1/2 inset-e-1 -translate-y-1/2 rounded-md p-2',
               'text-text-subtle transition-colors duration-fast',
               'hover:text-text focus-visible:text-text',
             )}

@@ -11,18 +11,28 @@ import { DURATION, EASE } from '@/lib/motion';
  * Deliberately not decorative: it shows a prospective user what the product
  * actually does to a file after upload. Abstract blobs and gradient meshes are
  * interchangeable between products; this only makes sense for this one.
+ *
+ * Strings arrive translated from the server dictionary rather than being
+ * hard-coded here.
  */
-const STAGES = [
-  { label: 'Uploaded', detail: 'Stored in encrypted object storage' },
-  { label: 'Processing', detail: 'Thumbnails and metadata extracted' },
-  { label: 'OCR', detail: 'Text recovered from scans and images' },
-  { label: 'AI analysis', detail: 'Summarised, classified, indexed' },
-  { label: 'Ready', detail: 'Searchable across your workspace' },
-] as const;
+export interface Stage {
+  label: string;
+  detail: string;
+}
+
+export interface Stages {
+  uploaded: Stage;
+  processing: Stage;
+  ocr: Stage;
+  ai: Stage;
+  ready: Stage;
+}
+
+const ORDER = ['uploaded', 'processing', 'ocr', 'ai', 'ready'] as const;
 
 const STEP_MS = 1500;
 
-export function Pipeline({ className }: { className?: string }) {
+export function Pipeline({ className, stages }: { className?: string; stages: Stages }) {
   const reduced = useReducedMotion();
   const [cycled, setCycled] = useState(0);
 
@@ -30,7 +40,7 @@ export function Pipeline({ className }: { className?: string }) {
     if (reduced) return;
 
     const id = setInterval(() => {
-      setCycled((current) => (current + 1) % STAGES.length);
+      setCycled((current) => (current + 1) % ORDER.length);
     }, STEP_MS);
 
     return () => clearInterval(id);
@@ -44,19 +54,20 @@ export function Pipeline({ className }: { className?: string }) {
    * Under reduced motion the pipeline is shown already complete — the
    * information survives, the movement does not.
    */
-  const active = reduced ? STAGES.length - 1 : cycled;
+  const active = reduced ? ORDER.length - 1 : cycled;
 
   return (
     <ul className={cn('relative flex flex-col gap-5', className)}>
-      {/* Rail the nodes sit on */}
-      <span aria-hidden="true" className="absolute top-2 bottom-2 left-1.75 w-px bg-white/12" />
+      {/* Rail the nodes sit on. Logical inset so it mirrors in RTL. */}
+      <span aria-hidden="true" className="absolute top-2 bottom-2 inset-s-1.75 w-px bg-white/12" />
 
-      {STAGES.map((stage, index) => {
+      {ORDER.map((key, index) => {
+        const stage = stages[key];
         const done = index < active;
         const current = index === active;
 
         return (
-          <li key={stage.label} className="relative flex items-start gap-4">
+          <li key={key} className="relative flex items-start gap-4">
             <span className="relative mt-0.5 flex size-3.75 shrink-0 items-center justify-center">
               {current && !reduced && (
                 <motion.span
@@ -83,7 +94,9 @@ export function Pipeline({ className }: { className?: string }) {
                   'text-sm font-medium transition-colors',
                   current ? 'text-white' : done ? 'text-white/70' : 'text-white/40',
                 )}
-                animate={reduced ? undefined : { x: current ? 2 : 0 }}
+                // No x-nudge: a hard-coded positive offset would push the label
+                // the wrong way in RTL. Colour and scale carry the emphasis.
+                animate={reduced ? undefined : { opacity: current ? 1 : 0.92 }}
                 transition={{ duration: DURATION.base, ease: EASE.outQuint }}
               >
                 {stage.label}
