@@ -13,7 +13,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1 — dependencies
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 
 # NOTE: copying the whole tree here is deliberate while the workspace layout is
@@ -46,7 +46,7 @@ RUN npm prune --omit=dev
 # ------------------------------------------------------------------------------
 # Stage 3 — runtime
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
