@@ -43,8 +43,12 @@
   --border-strong: oklch(0.836 0.009 85);
 
   --text: oklch(0.235 0.012 75);
-  --text-muted: oklch(0.475 0.011 75);
-  --text-subtle: oklch(0.625 0.009 75);
+  --text-muted: oklch(0.44 0.011 75);
+  /* Was 0.625, which measured 3.29:1 against surface-inset — below AA and
+   * visibly washed out on the near-white light canvas. Hints, placeholders and
+   * meter labels all use this token, so it has to clear 4.5:1 like any other
+   * text; "de-emphasised" is not an exemption from being readable. */
+  --text-subtle: oklch(0.535 0.009 75);
   --text-inverse: oklch(0.985 0.004 85);
 
   --accent: oklch(0.52 0.12 55);
@@ -98,7 +102,7 @@
 
     --text: oklch(0.948 0.004 85);
     --text-muted: oklch(0.722 0.007 85);
-    --text-subtle: oklch(0.578 0.008 85);
+    --text-subtle: oklch(0.635 0.008 85);
     --text-inverse: oklch(0.185 0.008 80);
 
     --accent: oklch(0.76 0.125 60);
@@ -134,7 +138,7 @@
 
   --text: oklch(0.948 0.004 85);
   --text-muted: oklch(0.722 0.007 85);
-  --text-subtle: oklch(0.578 0.008 85);
+  --text-subtle: oklch(0.635 0.008 85);
   --text-inverse: oklch(0.185 0.008 80);
 
   --accent: oklch(0.76 0.125 60);
@@ -406,6 +410,26 @@
     -webkit-box-shadow: 0 0 0 1000px var(--color-surface-inset) inset;
     caret-color: var(--color-text);
     transition: background-color 5000s ease-in-out 0s;
+  }
+}
+
+@layer components {
+  /* Brand panel — background and foreground bound together deliberately.
+   *
+   * Previously this was `bg-brand-panel` plus separate `text-white` children.
+   * If that one background utility failed to resolve for any reason (a stale
+   * dev build was how it surfaced), the panel fell back to transparent and every
+   * white label sat on the near-white canvas — invisible. Pairing the two here
+   * means the light foreground can never outlive the dark background.
+   *
+   * The literal fallback in var() is a second belt: even with the token missing
+   * entirely, the panel still paints dark rather than transparent.
+   *
+   * Intentionally dark in BOTH themes — the contrast against the form column is
+   * what gives the auth screens their structure. */
+  .brand-panel {
+    background-color: var(--brand-panel, oklch(0.185 0.016 55));
+    color: var(--color-white, #fff);
   }
 }
 

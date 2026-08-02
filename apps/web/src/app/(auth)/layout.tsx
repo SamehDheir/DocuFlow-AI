@@ -19,7 +19,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* ---------------------------------------------------------------- */}
       {/* Brand panel                                                       */}
       {/* ---------------------------------------------------------------- */}
-      <aside className="grain bg-brand-panel relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-12">
+      <aside className="grain brand-panel relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-12">
         {/* Depth: two off-centre blooms. Centred symmetrical gradients are the
             giveaway of a generated hero.
 
