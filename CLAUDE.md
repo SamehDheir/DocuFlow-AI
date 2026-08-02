@@ -4,27 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-This repository contains **no code**. The only file is [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md), a planning/architecture spec for DocuFlow AI, a multi-tenant SaaS document management platform. The spec itself declares the stage as: discovery completed, architecture defined, database design pending, implementation not started.
+npm-workspaces monorepo. Both applications are scaffolded and boot, but only the foundation exists — there is **no domain functionality yet**: no auth, no upload, no folders, no endpoints beyond the health probe.
 
-There is also no git repository, no package manifest, and therefore **no build, lint, or test commands yet**. Do not invent them or claim a command works without having run it. When scaffolding begins, add the real commands to this file.
+| Workspace       | State                                                                        |
+| --------------- | ---------------------------------------------------------------------------- |
+| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`. Boots.    |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Default page + `GET /api/health`. Boots.            |
+| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy. |
+| Database        | Migration `init` applied — 14 tables with composite tenant indexes.          |
 
-The spec is bilingual — prose is in Arabic, technical terms and all identifiers in English. Keep code, schema names, and API contracts in English.
+[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) is the product spec. It is bilingual — prose in Arabic, identifiers in English. Keep code, schema names, and API contracts in English.
 
-## Planned Stack
+## Commands
 
-- **Frontend**: Next.js (App Router) + TypeScript, Tailwind, shadcn/ui, TanStack Query, Zustand, React Hook Form + Zod
-- **Backend**: NestJS + TypeScript, Prisma, PostgreSQL, Redis, BullMQ, Swagger
-- **Storage**: MinIO (S3-compatible)
-- **AI**: OpenAI or Gemini API, optional LangChain, pgvector or Qdrant for embeddings
-- **Infra**: Docker, Nginx, CI/CD
+Run from the repository root. Root scripts fan out across workspaces via `scripts/run-workspaces.mjs`.
 
-The spec lists these as choices, not as installed dependencies. Confirm what actually exists in `package.json` before assuming a library is available.
+```bash
+npm run infra:up          # Postgres + Redis + MinIO (required before the API boots)
+npm run dev               # both apps in watch mode
+npm run lint              # both workspaces
+npm run typecheck
+npm test
+npm run build
+npm run format            # Prettier; format:check is what CI enforces
+```
+
+Single workspace, and the Prisma commands:
+
+```bash
+npm run test --workspace=@docuflow/api
+npm run test --workspace=@docuflow/api -- --testPathPattern=tenant
+npm run prisma:generate --workspace=@docuflow/api
+npm run prisma:migrate --workspace=@docuflow/api -- --name <migration-name>
+npm run test:e2e --workspace=@docuflow/api    # needs infra up; not run by `npm test`
+```
+
+`npm test` runs jest with `rootDir: src`, so it covers `src/**/*.spec.ts` only. The e2e suite under `test/` boots the real AppModule and needs a live database.
+
+## Stack (installed, not aspirational)
+
+- **API**: NestJS 11, Prisma 7 + `@prisma/adapter-pg`, `@nestjs/config`, zod 4 (env), class-validator (DTOs), jest
+- **Web**: Next.js 16 (App Router, `src/`), React 19, Tailwind 4
+- **Infra**: Postgres 17 via `pgvector/pgvector:pg17`, Redis 7, MinIO
+
+Not yet installed despite appearing in the spec: BullMQ, Swagger, MinIO client, shadcn/ui, TanStack Query, Zustand. Check `package.json` before assuming a library is available.
+
+### Version traps
+
+Both majors moved past common training data — verify rather than recall:
+
+- **Prisma 7** removed `url` from the `datasource` block. Connection config for the CLI lives in `apps/api/prisma.config.ts`; the runtime client requires a **driver adapter** (`PrismaPg`), constructed in `prisma.service.ts`. Prisma no longer auto-loads `.env`.
+- **Next.js 16** ships its own docs at `node_modules/next/dist/docs/` — read those before writing config, per `apps/web/AGENTS.md`.
+
+The single `.env` lives at the **repo root**, not per app. `@nestjs/config` reads `['.env', '../../.env']` and `prisma.config.ts` loads it via dotenv.
 
 ## Architecture Constraints
 
 These are the decisions that cut across modules; violating them is a correctness/security bug, not a style issue.
 
-**Multi-tenancy is shared-database with a `company_id` discriminator.** Every tenant-scoped table carries `company_id`, and every query must filter on the current company. A missing filter leaks one customer's documents to another. Prefer enforcing this centrally — Prisma middleware/extension or a request-scoped tenant context — over relying on each call site to remember the `where` clause. `permissions` is the one global table in the spec (no `company_id`); `roles` are per-company.
+**Multi-tenancy is shared-database with a `company_id` discriminator, enforced centrally.** This is already implemented — do not add manual `companyId` filters to individual queries, and do not work around the guard.
+
+- `TenantContextService` ([tenant-context.service.ts](apps/api/src/common/tenant/tenant-context.service.ts)) holds the current company in `AsyncLocalStorage`. `TenantMiddleware` binds it per request from the authenticated principal.
+- `applyTenantGuard` ([tenant-guard.ts](apps/api/src/prisma/tenant-guard.ts)) is a Prisma client extension that injects `companyId` into every query and stamps it onto every create.
+- Inject **`TENANT_PRISMA`** for application code. `PrismaService` is the raw, unfiltered client and is for infrastructure only (health probes, connection lifecycle).
+
+The guard is **fail-closed**: with no tenant context bound, a tenant-scoped query throws rather than returning unfiltered rows. Since auth does not exist yet, `req.user` is always undefined, so this throw is the expected behaviour today — not a bug to route around. Use `runAsSystem()` for the genuine exceptions (registration, login lookup, queue workers).
+
+Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThrow` are verified _after_ execution (Prisma only accepts unique fields in their `where`), and join models with no `companyId` of their own — `DocumentVersion`, `DocumentMetadata`, `DocumentTag`, `RolePermission`, `UserRole` — are only protected transitively, so reach them through their parent.
+
+`permissions` is the one global table (no `company_id`); `roles` are per-company.
 
 **Files never live in PostgreSQL.** Postgres stores metadata, references, and permissions; MinIO stores bytes. `documents.storage_key` is the join between them. Storage layout is `documents/company_<id>/<year>/<month>/<uuid>.<ext>` — the company segment keeps tenant data separable at the object-store level too.
 
@@ -38,7 +86,12 @@ These are the decisions that cut across modules; violating them is a correctness
 
 ## Module Layout
 
-Backend `src/` is organized by domain module: `auth`, `users`, `companies`, `roles`, `permissions`, `documents`, `storage`, `ai`, `search`, `notifications`, `audit`, plus `prisma`, `common`, `config`.
+`apps/api/src/` currently holds `config/`, `common/tenant/`, `prisma/`, and `health/`. Domain modules from the spec — `auth`, `users`, `companies`, `roles`, `permissions`, `documents`, `storage`, `ai`, `search`, `notifications`, `audit` — are still to be added alongside them.
+
+Two paths are load-bearing and must not drift:
+
+- **`GET /health`** sits outside the `/api` global prefix (`setGlobalPrefix('api', { exclude: ['health'] })`). Both `docker/api.Dockerfile`'s HEALTHCHECK and `docker-compose.prod.yml` target it. The e2e suite asserts `/api/health` returns 404 to catch regressions.
+- **`apps/api/dist/main.js`** is the built entrypoint the Dockerfile CMD runs. `tsconfig.build.json` pins `rootDir: src` to keep it there, and pins `tsBuildInfoFile` inside `dist` — nest's `deleteOutDir` would otherwise wipe `dist` while the stale incremental cache convinced tsc nothing needed emitting, producing a silent empty build.
 
 ## Scope Discipline
 
