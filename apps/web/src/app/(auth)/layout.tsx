@@ -19,21 +19,27 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* ---------------------------------------------------------------- */}
       {/* Brand panel                                                       */}
       {/* ---------------------------------------------------------------- */}
-      <aside className="grain relative hidden overflow-hidden bg-[oklch(0.19_0.014_195)] lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-12">
-        {/* Depth: one warm accent bloom, off-centre. Centred symmetrical
-            gradients are the giveaway of a generated hero. */}
+      <aside className="grain bg-brand-panel relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10 xl:p-12">
+        {/* Depth: two off-centre blooms. Centred symmetrical gradients are the
+            giveaway of a generated hero.
+
+            Colours come from --brand-bloom-* rather than literals, so they
+            track the accent — colour-mix applies the alpha without needing a
+            second token per opacity. */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -top-32 -left-24 size-[30rem] rounded-full opacity-45 blur-[90px]"
           style={{
-            background: 'radial-gradient(circle, oklch(0.62 0.12 195 / 0.55), transparent 68%)',
+            background:
+              'radial-gradient(circle, color-mix(in oklch, var(--color-brand-bloom-a) 55%, transparent), transparent 68%)',
           }}
         />
         <div
           aria-hidden="true"
           className="pointer-events-none absolute right-[-10rem] bottom-[-12rem] size-[26rem] rounded-full opacity-30 blur-[100px]"
           style={{
-            background: 'radial-gradient(circle, oklch(0.72 0.13 155 / 0.4), transparent 70%)',
+            background:
+              'radial-gradient(circle, color-mix(in oklch, var(--color-brand-bloom-b) 40%, transparent), transparent 70%)',
           }}
         />
 
