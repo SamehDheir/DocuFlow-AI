@@ -1,0 +1,312 @@
+// DocuFlow AI — database schema
+//
+// Derived from PROJECT_DOCUMENTATION.md §14, which lists column names only.
+// Types, relations, indexes, and delete behaviour are added here.
+//
+// TENANT ISOLATION
+// Every tenant-scoped model carries `companyId`, and its indexes are composite
+// with `companyId` FIRST. Ordering matters: an index on (status) alone cannot
+// serve `WHERE company_id = ? AND status = ?` efficiently, and every query in
+// this system filters by company. `permissions` is the sole global table —
+// it is a fixed catalogue of capabilities, not per-tenant data.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7 removed `url` from the datasource block. The connection string for
+  // CLI commands (migrate, studio) now lives in prisma.config.ts, and the
+  // runtime client gets its connection from a driver adapter — see
+  // src/prisma/prisma.service.ts.
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+/// Document lifecycle from PROJECT_DOCUMENTATION.md §11.
+/// Only READY is safe to serve for search and AI — everything before it means
+/// the bytes or derived data are still incomplete.
+enum DocumentStatus {
+  CREATED
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  OCR
+  AI_ANALYSIS
+  READY
+  ARCHIVED
+  DELETED
+}
+
+// -----------------------------------------------------------------------------
+// Tenancy
+// -----------------------------------------------------------------------------
+
+model Company {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String        @unique
+  logo      String?
+  status    CompanyStatus @default(ACTIVE)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  users     User[]
+  roles     Role[]
+  folders   Folder[]
+  documents Document[]
+  tags      Tag[]
+  auditLogs AuditLog[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  email        String
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  avatar       String?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles            UserRole[]
+  ownedDocuments   Document[]        @relation("DocumentOwner")
+  createdFolders   Folder[]          @relation("FolderCreatedBy")
+  uploadedVersions DocumentVersion[] @relation("VersionUploadedBy")
+  auditLogs        AuditLog[]
+
+  /// Email is unique PER COMPANY, not globally — the same person may hold an
+  /// account with two different customers, and a global unique would let one
+  /// tenant's registration block another's.
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// Authorisation
+// -----------------------------------------------------------------------------
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("roles")
+}
+
+/// Global capability catalogue — deliberately NOT tenant-scoped.
+/// Companies compose these into their own roles via RolePermission.
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  module      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+// -----------------------------------------------------------------------------
+// Documents
+// -----------------------------------------------------------------------------
+
+model Folder {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  parentId  String?  @map("parent_id") @db.Uuid
+  name      String
+  createdById String @map("created_by_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]   @relation("FolderTree")
+  createdBy User       @relation("FolderCreatedBy", fields: [createdById], references: [id])
+  documents Document[]
+
+  /// NOTE: Postgres treats NULLs as distinct, so this does NOT prevent two
+  /// same-named folders at the root of a company (where parent_id IS NULL).
+  /// Enforce root-level name uniqueness in application code if it is required.
+  @@unique([companyId, parentId, name])
+  @@index([companyId, parentId])
+  @@map("folders")
+}
+
+model Document {
+  id           String         @id @default(uuid()) @db.Uuid
+  companyId    String         @map("company_id") @db.Uuid
+  folderId     String?        @map("folder_id") @db.Uuid
+  ownerId      String         @map("owner_id") @db.Uuid
+  name         String
+  originalName String         @map("original_name")
+  mimeType     String         @map("mime_type")
+  extension    String
+  /// BigInt: a 32-bit int caps out at ~2.1 GB, which a scanned archive can exceed.
+  size         BigInt
+  /// Object key in MinIO. Bytes never live in Postgres (see §13).
+  storageKey   String         @unique @map("storage_key")
+  /// Content hash, for integrity checks and duplicate detection.
+  hash         String?
+  status       DocumentStatus @default(CREATED)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  /// Soft delete — Restore is a required feature (§12), so rows are never
+  /// physically removed by the delete endpoint.
+  deletedAt    DateTime?      @map("deleted_at")
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder   Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner    User              @relation("DocumentOwner", fields: [ownerId], references: [id])
+  versions DocumentVersion[]
+  metadata DocumentMetadata?
+  tags     DocumentTag[]
+
+  @@index([companyId, folderId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([ownerId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  /// Each version points at its OWN immutable object. Reusing the document's
+  /// key across versions would overwrite history — which is why the MinIO
+  /// bucket also has versioning enabled.
+  storageKey    String   @unique @map("storage_key")
+  size          BigInt
+  hash          String?
+  uploadedById  String   @map("uploaded_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+model DocumentMetadata {
+  id          String   @id @default(uuid()) @db.Uuid
+  documentId  String   @unique @map("document_id") @db.Uuid
+  title       String?
+  description String?
+  language    String?
+  author      String?
+  keywords    String[]
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_metadata")
+}
+
+model Tag {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  name      String
+  color     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents DocumentTag[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("tags")
+}
+
+model DocumentTag {
+  documentId String @map("document_id") @db.Uuid
+  tagId      String @map("tag_id") @db.Uuid
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, tagId])
+  @@index([tagId])
+  @@map("document_tags")
+}
+
+// -----------------------------------------------------------------------------
+// Audit
+// -----------------------------------------------------------------------------
+
+/// "Who changed or deleted this file" is a problem the product exists to solve
+/// (§2), so every mutating operation is expected to write one of these.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  /// Nullable so system-initiated actions (queue workers, scheduled jobs) can
+  /// still be recorded rather than dropped.
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, entityType, entityId])
+  @@index([companyId, userId])
+  @@map("audit_logs")
+}

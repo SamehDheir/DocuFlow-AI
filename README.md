@@ -13,21 +13,25 @@ Engineering guidance for AI assistants: [CLAUDE.md](CLAUDE.md)
 
 ## Status
 
-**Pre-implementation.** This repository currently contains infrastructure,
-tooling, and CI/CD only — there is no application code yet.
+**Foundation complete, no features yet.** Both apps are scaffolded, build, and
+boot. There is no domain functionality: no authentication, no upload, no
+folders, no endpoints beyond the health probes.
 
-| Area                       | State                                                   |
-| -------------------------- | ------------------------------------------------------- |
-| Development infrastructure | Working — Postgres, Redis, MinIO run via Docker Compose |
-| CI pipeline                | Working — passes with the current empty `apps/`         |
-| GHCR image publishing      | Configured, dormant until `apps/` has code              |
-| Production compose, nginx  | Template — unbuildable until the apps exist             |
-| `apps/api` (NestJS)        | Not scaffolded                                          |
-| `apps/web` (Next.js)       | Not scaffolded                                          |
+| Area                       | State                                                             |
+| -------------------------- | ----------------------------------------------------------------- |
+| Development infrastructure | Working — Postgres, Redis, MinIO run via Docker Compose           |
+| Database schema            | Migration `init` applied — 14 tables, composite tenant indexes    |
+| `apps/api` (NestJS 11)     | Boots. Env validation, tenant guard, `GET /health`. 8 tests pass. |
+| `apps/web` (Next.js 16)    | Boots. Default page + `GET /api/health`. No tests yet.            |
+| CI pipeline                | Working — API and web jobs now active                             |
+| GHCR image publishing      | Configured; images not yet built in CI                            |
+| Production compose, nginx  | Template — still never executed                                   |
+| Auth, documents, storage   | Not started                                                       |
 
-The API and web jobs in CI detect their own app directories and skip when absent,
-so they activate on their own as soon as each app is scaffolded — no workflow
-changes needed.
+Docker images have still never been built — the Dockerfiles are written against
+this layout and verified by inspection (`dist/main.js` and
+`.next/standalone/apps/web/server.js` both land where the Dockerfiles expect),
+but no `docker build` has run.
 
 ---
 
@@ -51,12 +55,21 @@ git clone <your-repo-url> && cd "DocuFlow AI"
 #    to get running locally.
 cp .env.example .env
 
-# 2. Root tooling (Prettier). Applications bring their own dependencies later.
+# 2. Install every workspace (root tooling + both apps).
 npm install
 
 # 3. Backing services: Postgres + Redis + MinIO
 npm run infra:up
+
+# 4. Apply the database schema
+npm run prisma:migrate:deploy --workspace=@docuflow/api
+
+# 5. Both apps in watch mode — API on :3001, web on :3000
+npm run dev
 ```
+
+The API refuses to boot without the infrastructure running: it validates the
+environment at startup and connects to Postgres immediately.
 
 Confirm everything came up:
 
@@ -102,9 +115,18 @@ the Postgres volume is first created.
 
 ```
 .
-├── apps/                       not created yet
-│   ├── api/                    NestJS + Prisma  (planned)
-│   └── web/                    Next.js          (planned)
+├── apps/
+│   ├── api/                    @docuflow/api — NestJS 11 + Prisma 7
+│   │   ├── prisma/
+│   │   │   ├── schema.prisma   14 models, tenant-scoped
+│   │   │   └── migrations/
+│   │   ├── prisma.config.ts    Prisma 7 CLI config (connection URL lives here)
+│   │   └── src/
+│   │       ├── common/tenant/  AsyncLocalStorage tenant context + middleware
+│   │       ├── config/         zod environment validation
+│   │       ├── health/         GET /health  (outside the /api prefix)
+│   │       └── prisma/         PrismaService + tenant guard extension
+│   └── web/                    @docuflow/web — Next.js 16 + Tailwind 4
 ├── packages/                   shared types / Zod schemas (planned)
 ├── docker/
 │   ├── api.Dockerfile          multi-stage NestJS build      [template]
@@ -122,16 +144,19 @@ the Postgres volume is first created.
 └── .env.example                every variable, documented
 ```
 
-Files marked `[template]` have **never been executed** — they encode the intended
-setup but depend on application code that does not exist yet. Expect to fix small
-details the first time each one runs.
+Files marked `[template]` have **never been executed**. They are written against
+the current layout — the API's `dist/main.js` and the web app's
+`.next/standalone/apps/web/server.js` both land exactly where the Dockerfiles
+expect — but no `docker build` has been run against them. Expect to fix small
+details the first time each one does.
 
 ---
 
 ## Scripts
 
-Root scripts fan out across every workspace via `--if-present`, so they succeed
-harmlessly while `apps/` is empty.
+Root scripts fan out across every workspace via `scripts/run-workspaces.mjs`,
+skipping any workspace that does not define the script. `npm test` therefore
+runs the API suite and silently skips `apps/web`, which has no test runner yet.
 
 | Command                | Does                                     |
 | ---------------------- | ---------------------------------------- |
@@ -270,20 +295,28 @@ Caddy in front of nginx.
 
 ## Next steps
 
-The infrastructure is ready; the applications are not. In rough order:
+The foundation is in place. Toward the MVP (PROJECT_DOCUMENTATION.md §16), in
+rough order:
 
-1. Scaffold `apps/api` (`nest new`) with package name `@docuflow/api`, exposing
-   `GET /health` — both the Dockerfile healthcheck and the compose stack assume it.
-2. Add Prisma, and model `companies`, `users`, `roles`, `permissions`, and
-   `documents` from PROJECT_DOCUMENTATION.md §14 — noting that those sketches
-   list column names only, with no types, relations, or indexes.
-3. Enforce tenant isolation centrally (Prisma middleware or a request-scoped
-   tenant context) before writing feature code. Retrofitting `company_id`
-   filtering onto scattered queries is how tenant leaks happen.
-4. Scaffold `apps/web` (`create-next-app`) as `@docuflow/web`, with
-   `output: 'standalone'` in `next.config.ts` — `web.Dockerfile` requires it.
-5. Add each app's `lint`, `typecheck`, `test`, and `build` scripts. CI picks them
-   up automatically.
+1. **Authentication** — register company + admin, login, JWT, refresh. This is
+   the unblocking task: `TenantMiddleware` reads `req.user.companyId`, so until
+   a JWT guard populates it, every tenant-scoped query throws by design and no
+   other feature can be built on top.
+2. **Permission seeding** — `permissions` is a global catalogue; seed it and the
+   default per-company roles (Admin, Manager, Employee, Guest).
+3. **Folders** — create/list/rename, scoped by company.
+4. **Documents** — upload to MinIO, list, download, soft delete, restore. Add
+   the MinIO client; it is not installed yet.
+5. **Audit logging** — an interceptor writing `audit_logs` on mutations, rather
+   than scattered per-handler calls.
+6. **Dashboard** — storage usage, recent documents, activity.
+
+Deferred by design: BullMQ queues, OCR, AI, and Swagger are all v2 (§17) and
+none of their packages are installed.
+
+Before feature work, two things are worth doing: give `apps/web` a test runner
+(it has no `test` script, so CI silently skips it), and run `docker build` once
+against each Dockerfile — they have never been executed.
 
 ---
 
