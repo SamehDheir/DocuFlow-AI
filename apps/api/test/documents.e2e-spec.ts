@@ -157,6 +157,37 @@ describe('Documents (e2e)', () => {
       expect(restored.status).toBe('READY');
     });
 
+    it('preserves a non-Latin filename through upload and download', async () => {
+      /**
+       * multer defaults `defParamCharset` to latin1 and hands it to busboy, so
+       * an Arabic filename used to arrive decoded byte-for-byte as Western
+       * European text — `تقرير.pdf` persisted as `ØªÙ‚Ø±ÙŠØ±.pdf`. The product
+       * ships in Arabic, so this is a first-class case rather than an edge one.
+       */
+      const { auth } = await tenant('arabic');
+      const name = 'تقرير-سنوي.pdf';
+
+      const uploaded = (
+        await auth(request(server).post('/api/documents'))
+          .attach('file', PDF_BYTES, { filename: name, contentType: 'application/pdf' })
+          .expect(201)
+      ).body as DocumentBody & { originalName: string; extension: string };
+
+      expect(uploaded.originalName).toBe(name);
+      expect(uploaded.name).toBe(name);
+      expect(uploaded.extension).toBe('pdf');
+
+      // And it survives the round trip back out through Content-Disposition,
+      // which RFC 5987-encodes anything outside ASCII.
+      const downloaded = await auth(
+        request(server).get(`/api/documents/${uploaded.id}/download`),
+      ).expect(200);
+
+      const disposition = downloaded.headers['content-disposition'];
+      expect(disposition).toContain("filename*=UTF-8''");
+      expect(decodeURIComponent(disposition.split("filename*=UTF-8''")[1])).toBe(name);
+    });
+
     it('reports storage usage for the dashboard', async () => {
       const { auth } = await tenant('stats');
       await uploadTo(auth).expect(201);
@@ -168,6 +199,36 @@ describe('Documents (e2e)', () => {
 
       expect(stats.documents).toBe(1);
       expect(stats.storageBytes).toBe(String(PDF_BYTES.length));
+    });
+
+    it('counts the documents in each folder for the sidebar', async () => {
+      const { auth } = await tenant('counts');
+
+      const contracts = (
+        await auth(request(server).post('/api/folders')).send({ name: 'Contracts' }).expect(201)
+      ).body as FolderBody;
+      const empty = (
+        await auth(request(server).post('/api/folders')).send({ name: 'Empty' }).expect(201)
+      ).body as FolderBody;
+
+      const first = (await uploadTo(auth, 'one.pdf').field('folderId', contracts.id).expect(201))
+        .body as DocumentBody;
+      await uploadTo(auth, 'two.pdf').field('folderId', contracts.id).expect(201);
+
+      const listed = (await auth(request(server).get('/api/folders')).expect(200))
+        .body as (FolderBody & { documentCount: number })[];
+
+      expect(listed.find((row) => row.id === contracts.id)?.documentCount).toBe(2);
+      // Present with a zero rather than omitted — an empty folder is still a folder.
+      expect(listed.find((row) => row.id === empty.id)?.documentCount).toBe(0);
+
+      // Trashing one decrements it, since deletedAt is filtered explicitly.
+      await auth(request(server).delete(`/api/documents/${first.id}`)).expect(200);
+
+      const afterDelete = (await auth(request(server).get('/api/folders')).expect(200))
+        .body as (FolderBody & { documentCount: number })[];
+
+      expect(afterDelete.find((row) => row.id === contracts.id)?.documentCount).toBe(1);
     });
 
     it('refuses to delete a folder that still holds a document', async () => {
