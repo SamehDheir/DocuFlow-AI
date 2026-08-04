@@ -2,7 +2,9 @@
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
 import { FormAlert } from '@/components/ui/form-alert';
 import { PasswordMeter, scorePassword } from '@/components/ui/password-meter';
@@ -79,6 +81,8 @@ export function RegisterForm({
   common: CommonStrings;
 }) {
   const reduced = useReducedMotion();
+  const router = useRouter();
+  const { adopt } = useSession();
 
   const [step, setStep] = useState<Step>(0);
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -127,18 +131,21 @@ export function RegisterForm({
     setSubmitting(true);
 
     try {
-      await registerCompany({
-        companyName: values.companyName.trim(),
-        firstName: values.firstName.trim(),
-        lastName: values.lastName.trim(),
-        email: values.email.trim(),
-        password: values.password,
-      });
-      // Redirect to the dashboard lands with the backend endpoint.
+      adopt(
+        await registerCompany({
+          companyName: values.companyName.trim(),
+          firstName: values.firstName.trim(),
+          lastName: values.lastName.trim(),
+          email: values.email.trim(),
+          password: values.password,
+        }),
+      );
+      // Left submitting on purpose: the navigation is already in flight, and
+      // re-enabling the button first invites a second submit.
+      router.replace(`/${lang}/dashboard`);
     } catch (error) {
       setFormError(error instanceof AuthError ? error.message : common.genericError);
       if (error instanceof AuthError && error.fields) setErrors(error.fields);
-    } finally {
       setSubmitting(false);
     }
   }

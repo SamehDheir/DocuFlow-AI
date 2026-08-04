@@ -106,6 +106,38 @@
       "description": "Request a password reset link for your DocuFlow AI account."
     }
   },
+  "app": {
+    "skipToContent": "Skip to content",
+    "account": "Account",
+    "signOut": "Sign out",
+    "restoring": "Restoring your session"
+  },
+  "dashboard": {
+    "greeting": "Welcome back, {name}",
+    "subtitle": "Your workspace is set up. Here's where it stands.",
+    "workspaceLabel": "Workspace",
+    "roleLabel": "Your role",
+    "permissionsLabel": "Permissions",
+    "permissionsValue": "{count} granted",
+    "stats": {
+      "documents": "Documents",
+      "storage": "Storage used",
+      "members": "Team members"
+    },
+    "empty": {
+      "badge": "Coming next",
+      "title": "Nothing filed yet",
+      "body": "Uploads, folders, and the activity feed arrive with the documents module. Your workspace, roles, and permissions are already in place."
+    },
+    "error": {
+      "title": "Couldn't load your workspace",
+      "retry": "Try again"
+    },
+    "meta": {
+      "title": "Dashboard",
+      "description": "Your DocuFlow AI workspace."
+    }
+  },
   "notFound": {
     "code": "404",
     "title": "This page has been filed elsewhere.",

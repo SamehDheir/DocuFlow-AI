@@ -2,7 +2,9 @@
 
 import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
 import { FormAlert } from '@/components/ui/form-alert';
 import { TextField } from '@/components/ui/text-field';
@@ -35,6 +37,22 @@ function validate(email: string, password: string, t: LoginStrings): FieldErrors
   return errors;
 }
 
+/**
+ * Where to land after signing in.
+ *
+ * proxy.ts records the page the reader was turned away from in `next`. Only
+ * same-origin paths are honoured — a `next` of `https://evil.example` or
+ * `//evil.example` would make the login page an open redirect for phishing to
+ * point at, and the protocol-relative form is the one that gets missed.
+ */
+function destinationFor(lang: Locale): string {
+  const requested = new URLSearchParams(window.location.search).get('next');
+
+  return requested && requested.startsWith('/') && !requested.startsWith('//')
+    ? requested
+    : `/${lang}/dashboard`;
+}
+
 export function LoginForm({
   lang,
   t,
@@ -45,6 +63,8 @@ export function LoginForm({
   common: CommonStrings;
 }) {
   const reduced = useReducedMotion();
+  const router = useRouter();
+  const { adopt } = useSession();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -89,13 +109,13 @@ export function LoginForm({
     setSubmitting(true);
 
     try {
-      await signIn({ email, password });
-      // Session handling and the redirect to /dashboard land with the backend
-      // endpoint; there is nothing to route to yet.
+      adopt(await signIn({ email, password }));
+      // Left submitting on purpose: the navigation is already in flight, and
+      // re-enabling the button first invites a second submit.
+      router.replace(destinationFor(lang));
     } catch (error) {
       setFormError(error instanceof AuthError ? error.message : common.genericError);
       if (error instanceof AuthError && error.fields) setErrors(error.fields);
-    } finally {
       setSubmitting(false);
     }
   }

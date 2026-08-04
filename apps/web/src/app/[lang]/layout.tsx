@@ -6,6 +6,7 @@ import {
   IBM_Plex_Serif,
 } from 'next/font/google';
 import { notFound } from 'next/navigation';
+import { SessionProvider } from '@/components/auth/session-provider';
 import { direction, isLocale, localeTags, locales, type Locale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import '../globals.css';
@@ -143,12 +144,22 @@ export default async function RootLayout({
       lang={localeTags[locale]}
       dir={direction[locale]}
       suppressHydrationWarning
+      // globals.css sets scroll-behavior: smooth. Next needs to be told, or it
+      // animates the scroll on every route change — so following a link runs
+      // the page past the reader instead of landing at the top.
+      data-scroll-behavior="smooth"
       className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable} ${plexArabic.variable} h-full antialiased`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
-      <body className="flex min-h-full flex-col">{children}</body>
+      {/* Extensions such as Grammarly and password managers inject attributes
+          onto <body> before React hydrates, which React reports as a mismatch
+          against markup that is in fact identical. suppressHydrationWarning does
+          not cascade from <html>, so it is repeated here. */}
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   );
 }

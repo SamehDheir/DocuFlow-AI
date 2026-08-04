@@ -4,14 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-npm-workspaces monorepo. Both applications are scaffolded and boot, but only the foundation exists — there is **no domain functionality yet**: no auth, no upload, no folders, no endpoints beyond the health probe.
+npm-workspaces monorepo. **Auth is complete end to end, API and web**; documents, folders, and storage are not started.
 
-| Workspace       | State                                                                        |
-| --------------- | ---------------------------------------------------------------------------- |
-| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`. Boots.    |
-| `@docuflow/web` | Next.js 16 + Tailwind 4. Default page + `GET /api/health`. Boots.            |
-| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy. |
-| Database        | Migration `init` applied — 14 tables with composite tenant indexes.          |
+| Workspace       | State                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`, and the full `auth` module (see below).                 |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens **wired to the live API**, guarded `/dashboard`. |
+| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy.                                               |
+| Database        | Migrations `init` and `auth_tokens` applied — 15 tables with composite tenant indexes.                                     |
+
+Sign-in works end to end. The next task is the documents MVP — `storage` → `folders` → `documents`, in that order. [NEXT_STEPS.md](NEXT_STEPS.md) §3 has the detail.
+
+### Web session handling
+
+- **The access token is held in memory by `SessionProvider`, never in localStorage.** A reload therefore restores from the httpOnly refresh cookie, which is why there is a `restoring` state and a skeleton rather than a signed-out flash.
+- **`proxy.ts` cannot see the refresh cookie** — it is scoped to `/api/auth`. The API also sets `docuflow_session` (path `/`, script-readable, no credential) purely so navigations can be routed. It is a hint that outlives revocation; `AppShell` does the real check, and the API authorises every read.
+- **Refresh rotation has a 10-second leeway** before a spent token counts as replay, because tabs share one cookie jar and restoring several at once would otherwise read as theft.
 
 [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) is the product spec. It is bilingual — prose in Arabic, identifiers in English. Keep code, schema names, and API contracts in English.
 
@@ -68,7 +76,9 @@ These are the decisions that cut across modules; violating them is a correctness
 - `applyTenantGuard` ([tenant-guard.ts](apps/api/src/prisma/tenant-guard.ts)) is a Prisma client extension that injects `companyId` into every query and stamps it onto every create.
 - Inject **`TENANT_PRISMA`** for application code. `PrismaService` is the raw, unfiltered client and is for infrastructure only (health probes, connection lifecycle).
 
-The guard is **fail-closed**: with no tenant context bound, a tenant-scoped query throws rather than returning unfiltered rows. Since auth does not exist yet, `req.user` is always undefined, so this throw is the expected behaviour today — not a bug to route around. Use `runAsSystem()` for the genuine exceptions (registration, login lookup, queue workers).
+The guard is **fail-closed**: with no tenant context bound, a tenant-scoped query throws rather than returning unfiltered rows. Use `runAsSystem()` for the genuine exceptions (registration, login lookup, refresh, audit rows on anonymous requests, queue workers).
+
+**Prisma promises are lazy, and that interacts badly with `AsyncLocalStorage`.** A query issues nothing until something awaits it, so returning one out of a context callback means it executes after the scope has unwound — with no tenant bound, failing closed. `runAsSystem()` awaits its callback internally to make that shape safe; `run()` cannot, because `TenantMiddleware` passes it a synchronous `next()`. Calling `run()` by hand means awaiting inside the callback.
 
 Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThrow` are verified _after_ execution (Prisma only accepts unique fields in their `where`), and join models with no `companyId` of their own — `DocumentVersion`, `DocumentMetadata`, `DocumentTag`, `RolePermission`, `UserRole` — are only protected transitively, so reach them through their parent.
 
@@ -86,7 +96,19 @@ Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThro
 
 ## Module Layout
 
-`apps/api/src/` currently holds `config/`, `common/tenant/`, `prisma/`, and `health/`. Domain modules from the spec — `auth`, `users`, `companies`, `roles`, `permissions`, `documents`, `storage`, `ai`, `search`, `notifications`, `audit` — are still to be added alongside them.
+`apps/api/src/` holds `config/`, `common/tenant/`, `common/audit/`, `prisma/`, `health/`, `permissions/`, and `auth/`. Still to be added: `users`, `companies`, `roles`, `documents`, `storage`, `ai`, `search`, `notifications`.
+
+### Auth
+
+Endpoints: `POST /api/auth/{register,login,refresh,logout,forgot-password,reset-password}` and `GET /api/auth/me`.
+
+- **Authentication is split across middleware and a guard, deliberately.** Nest runs middleware → guards → handler, but `TenantMiddleware` needs the principal and must open its `AsyncLocalStorage` scope around the whole request. So `JwtMiddleware` resolves `req.user` and never rejects, and `JwtAuthGuard` (global, via `APP_GUARD`) decides whether a route tolerates anonymity. Registration order in `AppModule.configure()` is execution order.
+- **Routes are authenticated by default.** Opt out with `@Public()`, so a new controller is protected rather than quietly open.
+- **Access tokens are stateless JWTs; refresh tokens are opaque random strings with a row behind them.** A stateless refresh token cannot be revoked, which would make logout cosmetic. Only an HMAC digest is stored, keyed with `JWT_REFRESH_SECRET`.
+- **Refresh rotates, and replay of a spent token revokes the entire family.** Two parties holding one token is indistinguishable from theft, so the lineage dies and a real sign-in is forced.
+- **Login and forgot-password never reveal whether an account exists** — one error message, a decoy bcrypt comparison to level the timing, and an unconditional 200 from forgot-password.
+- Email is unique **per company**, so one address can exist in several tenants; the password selects the account, oldest wins on a tie. Picking a company explicitly is a v2 concern.
+- No mailer is in the stack. `forgot-password` logs the reset URL in development and withholds it in production.
 
 Two paths are load-bearing and must not drift:
 

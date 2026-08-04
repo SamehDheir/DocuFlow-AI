@@ -1,36 +1,40 @@
 # Next Steps
 
-Ordered build plan, written 2026-08-02 against commit `b548dd0` (branch `feature/i18n-arabic-english`).
+Ordered build plan, written 2026-08-02 against commit `b548dd0` (branch `feature/i18n-arabic-english`). Section 1 was completed 2026-08-04 on `feature/auth-backend`.
 
 ## Where the project actually stands
 
-The two workspaces have drifted apart, and that drift determines the order below.
-
-| Area          | State                                                                                                                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| API           | Foundation only — `config/`, `common/tenant/`, `prisma/`, `health/`. No domain modules.                                                          |
-| Web           | **Ahead of the API.** Design system, Arabic/English i18n with locale routing, and finished login / register / forgot-password screens.           |
-| Database      | Migration `init` applied. 13 tables. No table for refresh tokens or password-reset tokens.                                                       |
-| Contract gaps | [auth.ts](apps/web/src/lib/auth.ts) issues real requests to `POST /api/auth/login`, `/auth/register`, `/auth/forgot-password`. All three 404.    |
-
-Two structural facts make auth the only sensible next task, not merely the next one on the list:
-
-1. **The tenant guard is fail-closed.** `applyTenantGuard` throws when no company is bound to the AsyncLocalStorage context, and only the authenticated principal may bind it. Until a JWT populates `req.user`, *no* tenant-scoped query can run — so no documents module, no folders module, and no dashboard can be built or even tested end-to-end.
-2. **The frontend already declares the contract.** `SessionUser`, the `{ accessToken, user }` response shape, `credentials: 'include'` for an httpOnly refresh cookie, and the deliberate non-enumerating 200 from forgot-password are all decided. The backend implements a spec that exists rather than inventing one.
+| Area          | State                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| API           | `config/`, `common/tenant/`, `common/audit/`, `prisma/`, `health/`, `permissions/`, `auth/`. No documents or storage modules yet.   |
+| Web           | Design system, Arabic/English i18n with locale routing, finished login / register / forgot-password screens — **not yet wired up**. |
+| Database      | Migrations `init` and `auth_tokens` applied. 15 tables.                                                                             |
+| Contract gaps | [auth.ts](apps/web/src/lib/auth.ts) now reaches live endpoints, but nothing stores the session or acts on the response.             |
 
 ---
 
-## 1. Auth backend — unblocks everything else
+## ~~1. Auth backend~~ — done
+
+Delivered as specified below, with three deviations worth recording:
+
+- **Refresh digests are HMAC-SHA256 keyed with `JWT_REFRESH_SECRET`**, not a bare SHA-256. Same cost, and it gives that env var a real job — the refresh token is opaque rather than a JWT, so nothing else would have signed with it.
+- **The permission catalogue is defined in code and reconciled at boot** by `PermissionsService`, instead of a `prisma/seed.ts`. Registration depends on the catalogue existing, and a seed script that someone forgets to run produces companies whose roles silently grant nothing.
+- **`POST /auth/reset-password` was added.** The endpoint table below omitted it, which would have left `password_reset_tokens` write-only.
+
+One latent bug surfaced during the e2e run and is worth remembering: **Prisma promises are lazy**, so `runAsSystem(() => db.user.findMany())` handed the unexecuted query back to a caller who awaited it after the context had unwound, and it failed closed. `runAsSystem()` now awaits internally. See the Architecture Constraints note in [CLAUDE.md](CLAUDE.md).
+
+<details>
+<summary>Original plan, kept for reference</summary>
 
 ### 1.1 Resolve the middleware/guard ordering trap first
 
 This is the one design decision to make before writing code, because getting it wrong is discovered late and refactors the whole module.
 
-[tenant.middleware.ts:21-24](apps/api/src/common/tenant/tenant.middleware.ts#L21-L24) expects a JWT layer to have attached `req.user` by the time it runs. But Nest's request lifecycle is **middleware → guards → interceptors → pipes → handler**: a conventional `JwtAuthGuard` runs *after* `TenantMiddleware` and would be too late. `TenantContextService.run()` also wraps `next()`, so the AsyncLocalStorage scope has to be opened in middleware to cover the whole request.
+[tenant.middleware.ts:21-24](apps/api/src/common/tenant/tenant.middleware.ts#L21-L24) expects a JWT layer to have attached `req.user` by the time it runs. But Nest's request lifecycle is **middleware → guards → interceptors → pipes → handler**: a conventional `JwtAuthGuard` runs _after_ `TenantMiddleware` and would be too late. `TenantContextService.run()` also wraps `next()`, so the AsyncLocalStorage scope has to be opened in middleware to cover the whole request.
 
 Split the responsibility:
 
-- **`JwtMiddleware`** — verifies the `Authorization: Bearer` token, attaches `req.user = { sub, companyId, roles }`, and **does not throw** on a missing or invalid token. Registered in `AppModule` *before* `TenantMiddleware` (registration order in `configure()` is execution order).
+- **`JwtMiddleware`** — verifies the `Authorization: Bearer` token, attaches `req.user = { sub, companyId, roles }`, and **does not throw** on a missing or invalid token. Registered in `AppModule` _before_ `TenantMiddleware` (registration order in `configure()` is execution order).
 - **`JwtAuthGuard`** — enforces that `req.user` exists, returns 401 otherwise. Honours an `@Public()` decorator for `/auth/login`, `/auth/register`, `/auth/forgot-password`, and `/health`. Apply it globally via `APP_GUARD` so new controllers are protected by default rather than by remembering to opt in.
 
 ### 1.2 Dependencies
@@ -62,14 +66,14 @@ Both carry `companyId` so the tenant guard covers them. Run with `npm run prisma
 
 `apps/api/src/auth/` with `auth.module.ts`, `auth.controller.ts`, `auth.service.ts`, `token.service.ts`, `dto/`, `guards/`, `decorators/`.
 
-| Endpoint                    | Notes                                                                                                                             |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/auth/register`   | Company + Owner/Admin/Member roles + user + `UserRole`, in **one transaction** under `runAsSystem()`. Returns `{ accessToken, user }`. |
-| `POST /api/auth/login`      | Lookup under `runAsSystem()` — there is no tenant context yet at this point. Same generic error for unknown email and bad password.     |
-| `POST /api/auth/refresh`    | Reads the httpOnly cookie, rotates, re-issues. Detects reuse.                                                                       |
-| `POST /api/auth/logout`     | Revokes the refresh token and clears the cookie.                                                                                    |
-| `POST /api/auth/forgot-password` | **Always 200**, whatever the email. The UI depends on this; returning 404 for unknown addresses is an account-enumeration oracle.  |
-| `GET /api/auth/me`          | Session hydration for the web app.                                                                                                 |
+| Endpoint                         | Notes                                                                                                                                  |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/register`        | Company + Owner/Admin/Member roles + user + `UserRole`, in **one transaction** under `runAsSystem()`. Returns `{ accessToken, user }`. |
+| `POST /api/auth/login`           | Lookup under `runAsSystem()` — there is no tenant context yet at this point. Same generic error for unknown email and bad password.    |
+| `POST /api/auth/refresh`         | Reads the httpOnly cookie, rotates, re-issues. Detects reuse.                                                                          |
+| `POST /api/auth/logout`          | Revokes the refresh token and clears the cookie.                                                                                       |
+| `POST /api/auth/forgot-password` | **Always 200**, whatever the email. The UI depends on this; returning 404 for unknown addresses is an account-enumeration oracle.      |
+| `GET /api/auth/me`               | Session hydration for the web app.                                                                                                     |
 
 JWT payload is `{ sub, company_id, roles[], exp }` per CLAUDE.md. Set the refresh cookie `httpOnly`, `sameSite: 'lax'`, `secure` in production, and path-scoped to `/api/auth`.
 
@@ -85,16 +89,20 @@ Register, login success, login failure, and logout each write an `audit_logs` ro
 - E2E in `test/`: register → login → refresh → me → logout.
 - **A cross-tenant test.** Register two companies, then assert company A's token cannot read company B's rows. This is the guard's whole reason for existing and the one regression worth catching automatically.
 
+</details>
+
 ---
 
-## 2. Wire the web to the real auth
+## ~~2. Wire the web to the real auth~~ — done
 
-Only after §1 is green. The forms already call the right URLs, so the work is session handling, not forms.
+Session handling, route guarding, and a `/dashboard` landing page. Two decisions worth carrying forward:
 
-- Store the access token and hydrate the session from `GET /api/auth/me`; refresh on 401 and retry once.
-- Extend [proxy.ts](apps/web/src/proxy.ts) to guard app routes. It currently handles locale routing only — keep the two concerns separate inside the file, and preserve the `matcher` exclusions that keep `/api/health` unprefixed.
-- Build the authenticated shell: nav, user menu, logout, and the `(app)` route group beside the existing `(auth)` group.
-- Success and error states already exist in the forms; verify against real API error bodies, including the field-level `errors` map that `AuthError` expects.
+- **The access token lives in memory only**, so a reload restores the session from the refresh cookie instead. That is why `SessionProvider` has a `restoring` state and why the shell shows a skeleton rather than a signed-out page on a cold load.
+- **The refresh cookie is scoped to `/api/auth` and cannot be seen by `proxy.ts`.** The API therefore also sets `docuflow_session` — path `/`, script-readable, carrying no credential — purely so a navigation can be routed without a flash. It is a hint, not authorisation: it outlives revocation, and every protected read is still checked by the API.
+
+Rotation also gained a 10-second leeway before a spent refresh token counts as replay. Browser tabs share one cookie jar, so restoring several at once sends the same token from each; without the leeway that read as theft and signed the user out everywhere.
+
+Still open: **API error messages are English only.** The dictionaries cover client-side validation, but a 409 from registration renders untranslated. Fixing it properly means the API returning stable codes the web maps to strings.
 
 ---
 
