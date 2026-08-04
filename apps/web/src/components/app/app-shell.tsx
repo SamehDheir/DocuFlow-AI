@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useSession } from '@/components/auth/session-provider';
 import { Logo } from '@/components/brand/logo';
@@ -25,11 +25,14 @@ export function AppShell({
   lang,
   t,
   common,
+  nav,
   children,
 }: {
   lang: Locale;
   t: Dictionary['app'];
   common: Dictionary['common'];
+  /** Labels for the primary navigation, from the documents and trash namespaces. */
+  nav: { documents: string; trash: string; dashboard: string };
   children: React.ReactNode;
 }) {
   const { status } = useSession();
@@ -59,6 +62,8 @@ export function AppShell({
             <Logo />
           </Link>
 
+          <PrimaryNav lang={lang} nav={nav} />
+
           <div className="flex items-center gap-2">
             <LanguageSwitcher current={lang} />
             <ThemeToggle labels={{ toLight: common.switchToLight, toDark: common.switchToDark }} />
@@ -78,6 +83,63 @@ export function AppShell({
         {status === 'restoring' ? <ShellSkeleton label={t.restoring} /> : children}
       </motion.main>
     </div>
+  );
+}
+
+/**
+ * Primary navigation.
+ *
+ * `aria-current="page"` rather than colour alone — the active tab has to be
+ * identifiable without seeing it, and the underline is drawn with a layout
+ * animation so it slides between tabs instead of blinking.
+ *
+ * Hidden below `sm`, where the header has no room; the folder sidebar and the
+ * dashboard's own links cover navigation there.
+ */
+function PrimaryNav({
+  lang,
+  nav,
+}: {
+  lang: Locale;
+  nav: { documents: string; trash: string; dashboard: string };
+}) {
+  const pathname = usePathname();
+
+  const links = [
+    { href: `/${lang}/dashboard`, label: nav.dashboard },
+    { href: `/${lang}/documents`, label: nav.documents },
+    { href: `/${lang}/trash`, label: nav.trash },
+  ];
+
+  return (
+    <nav className="hidden items-center gap-1 sm:flex">
+      {links.map((link) => {
+        const active = pathname === link.href;
+
+        return (
+          <Link
+            key={link.href}
+            href={link.href}
+            aria-current={active ? 'page' : undefined}
+            className={
+              active
+                ? 'text-text relative rounded-md px-3 py-1.5 text-sm font-medium'
+                : 'text-text-muted hover:text-text relative rounded-md px-3 py-1.5 text-sm transition-colors'
+            }
+          >
+            {link.label}
+
+            {active ? (
+              <motion.span
+                layoutId="nav-underline"
+                className="bg-accent absolute inset-x-3 -bottom-px h-0.5 rounded-full"
+                transition={{ duration: DURATION.base, ease: EASE.outExpo }}
+              />
+            ) : null}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

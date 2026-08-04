@@ -1,12 +1,22 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
+import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
 import { fetchProfile, type Profile } from '@/lib/auth';
+import {
+  formatBytes,
+  getStats,
+  listDocuments,
+  type DocumentSummary,
+  type StorageStats,
+} from '@/lib/documents';
 import { respectMotion, riseItem, stagger } from '@/lib/motion';
 
 type DashboardStrings = Dictionary['dashboard'];
@@ -15,11 +25,22 @@ type CommonStrings = Dictionary['common'];
 type State =
   { kind: 'loading' } | { kind: 'ready'; profile: Profile } | { kind: 'error'; message: string };
 
-export function DashboardView({ t, common }: { t: DashboardStrings; common: CommonStrings }) {
+export function DashboardView({
+  lang,
+  t,
+  common,
+}: {
+  lang: Locale;
+  t: DashboardStrings;
+  common: CommonStrings;
+}) {
   const { status, withToken } = useSession();
   const reduced = useReducedMotion();
+  const router = useRouter();
 
   const [state, setState] = useState<State>({ kind: 'loading' });
+  const [stats, setStats] = useState<StorageStats | null>(null);
+  const [recent, setRecent] = useState<DocumentSummary[]>([]);
   /** Bumped to re-run the effect below; retry is otherwise identical to load. */
   const [attempt, setAttempt] = useState(0);
 
@@ -32,8 +53,24 @@ export function DashboardView({ t, common }: { t: DashboardStrings; common: Comm
 
     void (async () => {
       try {
+        /**
+         * The profile decides whether the page renders at all, so it is
+         * awaited on its own. Stats and the recent list are decoration on top:
+         * if either fails the dashboard still shows who you are and where you
+         * work, with em-dashes where the numbers would be.
+         */
         const profile = await withToken(fetchProfile);
-        if (current) setState({ kind: 'ready', profile });
+        if (!current) return;
+        setState({ kind: 'ready', profile });
+
+        const [totals, page] = await Promise.all([
+          withToken(getStats),
+          withToken((token) => listDocuments(token, { limit: 5 })),
+        ]);
+
+        if (!current) return;
+        setStats(totals);
+        setRecent(page.items);
       } catch (error) {
         if (current) {
           setState({
@@ -96,35 +133,68 @@ export function DashboardView({ t, common }: { t: DashboardStrings; common: Comm
       </motion.dl>
 
       {/*
-        Counts are omitted rather than shown as zero. There is no documents
-        module yet, so a "0 documents" tile would be a number the product cannot
-        stand behind — it reads as data when it is really absence of a feature.
+        Real numbers now that the documents module exists. Storage is the tile
+        that answers the question a customer actually asks first, so it leads.
       */}
+      <motion.dl variants={variants} className="mt-4 grid gap-4 sm:grid-cols-3">
+        <Facts
+          label={t.stats.storage}
+          value={stats ? formatBytes(stats.storageBytes, lang) : '—'}
+        />
+        <Facts
+          label={t.stats.documents}
+          value={stats ? new Intl.NumberFormat(lang).format(stats.documents) : '—'}
+        />
+        <Facts
+          label={t.stats.trashed}
+          value={stats ? new Intl.NumberFormat(lang).format(stats.trashed) : '—'}
+        />
+      </motion.dl>
+
       <motion.section
         variants={variants}
         className="mt-4 overflow-hidden rounded-xl border border-border bg-surface"
       >
-        <div className="flex flex-col items-center px-6 py-16 text-center">
-          <FolderMark className="text-text-subtle/45" />
+        <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-3">
+          <h2 className="text-sm font-medium">{t.recent.title}</h2>
+          <Link
+            href={`/${lang}/documents`}
+            className="text-accent rounded-md text-xs hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            {t.recent.viewAll}
+          </Link>
+        </header>
 
-          <span className="mt-6 inline-flex items-center rounded-full border border-accent-border bg-accent-subtle px-2.5 py-1 text-2xs font-medium tracking-wide text-accent uppercase">
-            {t.empty.badge}
-          </span>
+        {recent.length === 0 ? (
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <FolderMark className="text-text-subtle/45" />
+            <p className="mt-5 text-sm text-text-muted">{t.recent.empty}</p>
+            <Button className="mt-5" onClick={() => router.push(`/${lang}/documents`)}>
+              {t.recent.viewAll}
+            </Button>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {recent.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 px-5 py-3">
+                <span
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-inset text-[0.5rem] font-medium uppercase text-text-subtle"
+                  aria-hidden="true"
+                >
+                  {item.extension.slice(0, 4)}
+                </span>
 
-          <h2 className="mt-4 font-display text-xl font-semibold tracking-tight">
-            {t.empty.title}
-          </h2>
-          <p className="mt-2.5 max-w-md text-sm leading-relaxed text-text-muted">{t.empty.body}</p>
+                <span className="latin min-w-0 flex-1 truncate text-sm" title={item.name}>
+                  {item.name}
+                </span>
 
-          <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-text-subtle">
-            {[t.stats.documents, t.stats.storage, t.stats.members].map((item) => (
-              <li key={item} className="inline-flex items-center gap-1.5">
-                <span className="size-1 rounded-full bg-border-strong" aria-hidden="true" />
-                {item}
+                <span className="shrink-0 text-xs text-text-subtle">
+                  {formatBytes(item.size, lang)}
+                </span>
               </li>
             ))}
           </ul>
-        </div>
+        )}
       </motion.section>
     </motion.div>
   );

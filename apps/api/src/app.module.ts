@@ -1,11 +1,17 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { JwtMiddleware } from './auth/jwt.middleware';
+import { MulterExceptionFilter } from './common/errors/multer-exception.filter';
+import { PrismaExceptionFilter } from './common/errors/prisma-exception.filter';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { validateEnv } from './config/env.validation';
+import { DocumentsModule } from './documents/documents.module';
+import { FoldersModule } from './folders/folders.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -25,6 +31,18 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     AuthModule,
     HealthModule,
+    StorageModule,
+    FoldersModule,
+    DocumentsModule,
+  ],
+  providers: [
+    /**
+     * Constraint violations are client mistakes, not server failures. Without
+     * this a duplicate folder name would surface as a 500 with a stack trace.
+     */
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
+    /** Likewise an over-limit upload, which is a 413 rather than a crash. */
+    { provide: APP_FILTER, useClass: MulterExceptionFilter },
   ],
 })
 export class AppModule implements NestModule {

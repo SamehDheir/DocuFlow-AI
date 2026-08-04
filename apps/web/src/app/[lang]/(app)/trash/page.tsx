@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { isLocale, locales } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { DashboardView } from './dashboard-view';
+import { TrashView } from './trash-view';
 
 export async function generateMetadata({
   params,
@@ -15,20 +15,28 @@ export async function generateMetadata({
   const dict = await getDictionary(lang);
 
   return {
-    title: dict.dashboard.meta.title,
-    description: dict.dashboard.meta.description,
+    title: dict.trash.meta.title,
+    description: dict.trash.meta.description,
     alternates: {
-      canonical: `/${lang}/dashboard`,
-      languages: Object.fromEntries(locales.map((l) => [l, `/${l}/dashboard`])),
+      canonical: `/${lang}/trash`,
+      languages: Object.fromEntries(locales.map((l) => [l, `/${l}/trash`])),
     },
   };
 }
 
-export default async function DashboardPage({ params }: { params: Promise<{ lang: string }> }) {
+export default async function TrashPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
 
   const dict = await getDictionary(lang);
 
-  return <DashboardView lang={lang} t={dict.dashboard} common={dict.common} />;
+  return (
+    <TrashView
+      lang={lang}
+      t={dict.trash}
+      tDocuments={dict.documents}
+      errors={dict.errors}
+      common={dict.common}
+    />
+  );
 }

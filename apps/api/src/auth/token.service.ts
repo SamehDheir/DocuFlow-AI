@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { CookieOptions } from 'express';
 import { AuditService } from '../common/audit/audit.service';
+import type { RequestContext } from '../common/http/request-context';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import type { Env } from '../config/env.validation';
 import { TENANT_PRISMA } from '../prisma/prisma.module';
@@ -35,10 +36,11 @@ export const SESSION_COOKIE = 'docuflow_session';
  */
 const REUSE_LEEWAY_MS = 10_000;
 
-export interface RequestContext {
-  ipAddress?: string;
-  userAgent?: string;
-}
+/**
+ * Re-exported so existing `import { type RequestContext } from './token.service'`
+ * call sites keep working now that folders and documents need the same shape.
+ */
+export type { RequestContext };
 
 export interface TokenSubject {
   id: string;
