@@ -11,9 +11,24 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
+    // Global type packages, listed explicitly. TypeScript 7 no longer sweeps in
+    // every @types/* it finds by walking up to the workspace root, so jest's
+    // describe/it/expect and node's globals have to be named. Types that are
+    // imported rather than global (express, bcrypt, …) still resolve through
+    // normal module resolution and do not belong here.
+    "types": ["node", "jest"],
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    /**
+     * TypeScript 6 refuses to infer the source root: compiling only test/ makes
+     * the common source directory './test', and it now demands the setting be
+     * explicit rather than guessing (TS5011). This is the package root so that
+     * src/, test/, and prisma.config.ts all sit underneath it.
+     *
+     * Emit is unaffected — tsconfig.build.json overrides this with `src`, and
+     * that override is what keeps the entrypoint at dist/main.js.
+     */
+    "rootDir": ".",
     "incremental": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
