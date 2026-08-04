@@ -6,31 +6,44 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FormAlert } from '@/components/ui/form-alert';
 import { TextField } from '@/components/ui/text-field';
+import type { Locale } from '@/i18n/config';
+import type { Dictionary } from '@/i18n/get-dictionary';
 import { AuthError, signIn } from '@/lib/auth';
 import { respectMotion, riseItem, stagger } from '@/lib/motion';
+
+type LoginStrings = Dictionary['login'];
+type CommonStrings = Dictionary['common'];
 
 interface FieldErrors {
   email?: string;
   password?: string;
 }
 
-function validate(email: string, password: string): FieldErrors {
+function validate(email: string, password: string, t: LoginStrings): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!email.trim()) {
-    errors.email = 'Enter your work email.';
+    errors.email = t.errors.emailRequired;
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = "That doesn't look like a valid email address.";
+    errors.email = t.errors.emailInvalid;
   }
 
   if (!password) {
-    errors.password = 'Enter your password.';
+    errors.password = t.errors.passwordRequired;
   }
 
   return errors;
 }
 
-export function LoginForm() {
+export function LoginForm({
+  lang,
+  t,
+  common,
+}: {
+  lang: Locale;
+  t: LoginStrings;
+  common: CommonStrings;
+}) {
   const reduced = useReducedMotion();
 
   const [email, setEmail] = useState('');
@@ -51,11 +64,9 @@ export function LoginForm() {
     else setPassword(value);
 
     if (validateLive) {
-      const next = validate(
-        field === 'email' ? value : email,
-        field === 'password' ? value : password,
+      setErrors(
+        validate(field === 'email' ? value : email, field === 'password' ? value : password, t),
       );
-      setErrors(next);
     }
   }
 
@@ -63,7 +74,7 @@ export function LoginForm() {
     event.preventDefault();
     if (submitting) return;
 
-    const found = validate(email, password);
+    const found = validate(email, password, t);
     setErrors(found);
     setValidateLive(true);
 
@@ -82,12 +93,8 @@ export function LoginForm() {
       // Session handling and the redirect to /dashboard land with the backend
       // endpoint; there is nothing to route to yet.
     } catch (error) {
-      if (error instanceof AuthError) {
-        setFormError(error.message);
-        if (error.fields) setErrors(error.fields);
-      } else {
-        setFormError('Something went wrong. Please try again.');
-      }
+      setFormError(error instanceof AuthError ? error.message : common.genericError);
+      if (error instanceof AuthError && error.fields) setErrors(error.fields);
     } finally {
       setSubmitting(false);
     }
@@ -98,10 +105,8 @@ export function LoginForm() {
   return (
     <motion.div variants={stagger} initial="hidden" animate="visible">
       <motion.div variants={variants}>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-2 text-sm text-text-muted">
-          Access your workspace and pick up where you left off.
-        </p>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">{t.title}</h1>
+        <p className="mt-2 text-sm text-text-muted">{t.subtitle}</p>
       </motion.div>
 
       <motion.div variants={variants} className="mt-8">
@@ -112,13 +117,16 @@ export function LoginForm() {
         <motion.div variants={variants}>
           <TextField
             id="email"
-            label="Work email"
+            label={t.email}
             type="email"
             name="email"
             inputMode="email"
             autoComplete="email"
             autoFocus
-            placeholder="you@company.com"
+            // Email addresses are always LTR, even in an RTL layout — without
+            // this the caret and the @ sign land on the wrong side.
+            dir="ltr"
+            placeholder={t.emailPlaceholder}
             value={email}
             error={errors.email}
             onChange={(e) => update('email', e.target.value)}
@@ -128,20 +136,27 @@ export function LoginForm() {
         <motion.div variants={variants}>
           <TextField
             id="password"
-            label="Password"
+            label={t.password}
             name="password"
             autoComplete="current-password"
+            // Deliberately NOT dir="ltr" (unlike the email field above). Forcing
+            // the input to LTR makes its logical padding resolve against LTR
+            // while the reveal button's inset resolves against the RTL page —
+            // the eye ends up on the left with the clearance reserved on the
+            // right, overlapping the text. The value is masked anyway, so there
+            // is nothing for LTR to protect here.
             placeholder="••••••••••••"
             revealable
+            revealLabels={{ show: common.showPassword, hide: common.hidePassword }}
             value={password}
             error={errors.password}
             onChange={(e) => update('password', e.target.value)}
             action={
               <Link
-                href="/forgot-password"
+                href={`/${lang}/forgot-password`}
                 className="text-xs font-medium text-accent transition-opacity hover:opacity-75"
               >
-                Forgot password?
+                {t.forgot}
               </Link>
             }
           />
@@ -149,7 +164,7 @@ export function LoginForm() {
 
         <motion.div variants={variants} className="mt-1">
           <Button type="submit" size="lg" block loading={submitting}>
-            {submitting ? 'Signing in' : 'Sign in'}
+            {submitting ? t.submitting : t.submit}
           </Button>
         </motion.div>
       </form>
@@ -157,12 +172,12 @@ export function LoginForm() {
       <motion.div variants={variants} className="mt-8">
         <div className="rule-fade h-px" aria-hidden="true" />
         <p className="mt-6 text-center text-sm text-text-muted">
-          Don&apos;t have a workspace?{' '}
+          {t.noAccount}{' '}
           <Link
-            href="/register"
+            href={`/${lang}/register`}
             className="font-medium text-accent underline-offset-4 transition-opacity hover:underline hover:opacity-80"
           >
-            Create one
+            {t.createOne}
           </Link>
         </p>
       </motion.div>
