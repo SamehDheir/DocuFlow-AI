@@ -14,7 +14,11 @@ import { AuditService } from '../common/audit/audit.service';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import type { Env } from '../config/env.validation';
 import { DEFAULT_ROLES, OWNER_ROLE } from '../permissions/permissions.catalogue';
-import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionsService,
+  WITH_ROLE_PERMISSIONS,
+  permissionsOf,
+} from '../permissions/permissions.service';
 import { TENANT_PRISMA } from '../prisma/prisma.module';
 import type { TenantGuardedClient } from '../prisma/tenant-guard';
 import type { AuthResult, AuthenticatedUser, SessionUser } from './auth.types';
@@ -378,16 +382,7 @@ export class AuthService {
       where: { id: principal.sub },
       include: {
         company: { select: { id: true, name: true, slug: true } },
-        roles: {
-          select: {
-            role: {
-              select: {
-                name: true,
-                permissions: { select: { permission: { select: { name: true } } } },
-              },
-            },
-          },
-        },
+        ...WITH_ROLE_PERMISSIONS,
       },
     });
 
@@ -395,15 +390,11 @@ export class AuthService {
       throw new UnauthorizedException('Session is no longer valid');
     }
 
-    const permissions = new Set(
-      user.roles.flatMap((link) => link.role.permissions.map((entry) => entry.permission.name)),
-    );
-
     return {
       ...toSessionUser(user),
       company: user.company,
       roles: user.roles.map((link) => link.role.name),
-      permissions: [...permissions].sort(),
+      permissions: [...permissionsOf(user)].sort(),
     };
   }
 

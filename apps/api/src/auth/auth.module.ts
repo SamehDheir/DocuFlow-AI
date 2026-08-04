@@ -6,6 +6,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import { JwtMiddleware } from './jwt.middleware';
 import { TokenService } from './token.service';
 
@@ -25,6 +26,13 @@ import { TokenService } from './token.service';
      * decorator ends up protected rather than quietly open.
      */
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    /**
+     * Authorisation runs second. Order here IS execution order, and
+     * PermissionsGuard assumes JwtAuthGuard has already established a
+     * principal — reversing the two would ask the database about `undefined`
+     * on every anonymous request.
+     */
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
   /**
    * AppModule applies JwtMiddleware, and Nest instantiates middleware in the

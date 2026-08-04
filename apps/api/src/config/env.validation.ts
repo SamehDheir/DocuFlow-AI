@@ -33,7 +33,45 @@ const envSchema = z.object({
   BCRYPT_ROUNDS: z.coerce.number().int().min(4).max(20).default(12),
 
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
+
+  // Uploads
   MAX_FILE_SIZE: z.coerce.number().int().positive().default(104857600),
+  /**
+   * Comma-separated allowlist, parsed once at boot.
+   *
+   * An allowlist rather than a blocklist: the set of dangerous types is open
+   * ended, the set this product accepts is not. Must stay at or below nginx's
+   * `client_max_body_size` in docker/nginx/nginx.conf, currently 100m.
+   */
+  ALLOWED_MIME_TYPES: z
+    .string()
+    .default(
+      'application/pdf,image/png,image/jpeg,image/tiff,application/msword,' +
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
+        'application/vnd.ms-excel,' +
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain',
+    )
+    .transform((value) =>
+      value
+        .split(',')
+        .map((type) => type.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+
+  /**
+   * AI provider — Phase 5 of the roadmap, not required for the MVP.
+   *
+   * Declared optional now so v2 needs no env migration. Anthropic handles
+   * OCR, summarisation and classification; embeddings come from Voyage,
+   * because Anthropic ships no embeddings endpoint at all.
+   */
+  AI_PROVIDER: z.enum(['anthropic', 'openai']).optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  VOYAGE_API_KEY: z.string().optional(),
+  EMBEDDING_MODEL: z.string().optional(),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 
