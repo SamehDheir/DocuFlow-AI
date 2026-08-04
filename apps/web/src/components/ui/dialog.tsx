@@ -20,6 +20,15 @@ const FOCUSABLE =
  * On close, focus returns to whatever opened it, so a keyboard user is not
  * dumped back at the top of the document.
  */
+/**
+ * Panel widths. `lg` exists for the document preview, where a form-sized modal
+ * would show a PDF through a letterbox.
+ */
+const SIZES = {
+  md: 'max-w-md',
+  lg: 'max-w-4xl',
+} as const;
+
 export function Dialog({
   open,
   onClose,
@@ -27,6 +36,7 @@ export function Dialog({
   description,
   children,
   footer,
+  size = 'md',
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +44,7 @@ export function Dialog({
   description?: string;
   children?: React.ReactNode;
   footer?: React.ReactNode;
+  size?: keyof typeof SIZES;
 }) {
   const reduced = useReducedMotion();
   const panel = useRef<HTMLDivElement>(null);
@@ -113,7 +124,8 @@ export function Dialog({
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
             className={cn(
-              'border-border bg-surface-raised relative w-full max-w-md rounded-xl border p-6 shadow-xl',
+              'border-border bg-surface-raised relative flex max-h-[90dvh] w-full flex-col rounded-xl border p-6 shadow-xl',
+              SIZES[size],
             )}
             initial={reduced ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
             animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
@@ -130,9 +142,11 @@ export function Dialog({
               </p>
             ) : null}
 
-            {children ? <div className="mt-5">{children}</div> : null}
+            {/* Scrolls internally so a tall preview never pushes the footer
+                off-screen; max-h on the panel is what gives this a bound. */}
+            {children ? <div className="mt-5 min-h-0 flex-1 overflow-auto">{children}</div> : null}
 
-            {footer ? <div className="mt-6 flex justify-end gap-2">{footer}</div> : null}
+            {footer ? <div className="mt-6 flex shrink-0 justify-end gap-2">{footer}</div> : null}
           </motion.div>
         </div>
       ) : null}

@@ -40,6 +40,16 @@ export type FolderSummary = {
   createdById: string;
 };
 
+/**
+ * A folder as the sidebar lists it.
+ *
+ * `documentCount` counts the files filed DIRECTLY in the folder, not its
+ * subtree — so the number beside a folder is exactly what selecting it shows,
+ * and matches the `documentCount` GET /folders/:id already returns. A rolled-up
+ * subtree total would disagree with the list on screen.
+ */
+export type FolderListItem = FolderSummary & { documentCount: number };
+
 @Injectable()
 export class FoldersService {
   constructor(
@@ -93,12 +103,35 @@ export class FoldersService {
    * round trip per expanded node. Pass `parentId` to fetch a single level
    * instead, which is what a lazily-expanding sidebar wants.
    */
-  async list(parentId?: string | null): Promise<FolderSummary[]> {
-    return this.db.folder.findMany({
-      where: parentId === undefined ? {} : { parentId },
-      select: FOLDER_SUMMARY,
-      orderBy: { name: 'asc' },
-    });
+  async list(parentId?: string | null): Promise<FolderListItem[]> {
+    const [folders, counts] = await Promise.all([
+      this.db.folder.findMany({
+        where: parentId === undefined ? {} : { parentId },
+        select: FOLDER_SUMMARY,
+        orderBy: { name: 'asc' },
+      }),
+      /**
+       * Every folder's document count in ONE aggregate rather than a count per
+       * folder — the sidebar renders the whole tree, so a per-node query would
+       * be an N+1 that grows with the customer's filing depth.
+       *
+       * `deletedAt: null` is spelled out because the tenant guard handles
+       * companyId only; a trashed file must not still be counted against the
+       * folder it came from.
+       */
+      this.db.document.groupBy({
+        by: ['folderId'],
+        where: { deletedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const countFor = new Map(counts.map((row) => [row.folderId, row._count._all]));
+
+    return folders.map((folder) => ({
+      ...folder,
+      documentCount: countFor.get(folder.id) ?? 0,
+    }));
   }
 
   /** A folder with its immediate children and the path back to the root. */

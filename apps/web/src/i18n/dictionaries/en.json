@@ -244,6 +244,10 @@
     "meta": {
       "title": "Documents",
       "description": "Browse and manage your documents."
+    },
+    "preview": {
+      "close": "Close",
+      "loading": "Loading preview…"
     }
   },
   "upload": {
