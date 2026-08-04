@@ -63,6 +63,10 @@ Both majors moved past common training data — verify rather than recall:
 
 - **Prisma 7** removed `url` from the `datasource` block. Connection config for the CLI lives in `apps/api/prisma.config.ts`; the runtime client requires a **driver adapter** (`PrismaPg`), constructed in `prisma.service.ts`. Prisma no longer auto-loads `.env`.
 - **Next.js 16** ships its own docs at `node_modules/next/dist/docs/` — read those before writing config, per `apps/web/AGENTS.md`.
+- **TypeScript is pinned to 6, not 7.** TypeScript 7 is the native compiler rewrite and ships the `tsc` binary only — no programmatic compiler API, which both the Nest CLI and `ts-jest` require. Under 7 the API cannot build and every test suite fails to run. The API is expected back in 7.1.
+- **ESLint is pinned to 9, not 10.** ESLint 10 removed `context.getFilename()`, and `eslint-plugin-react` (pulled in transitively by `eslint-config-next`) still calls it, so linting the web app crashes outright.
+
+Dependabot will keep proposing both majors. **Do not merge them until the ecosystem catches up** — CI catches it, but only if a red run is treated as blocking.
 
 The single `.env` lives at the **repo root**, not per app. `@nestjs/config` reads `['.env', '../../.env']` and `prisma.config.ts` loads it via dotenv.
 
