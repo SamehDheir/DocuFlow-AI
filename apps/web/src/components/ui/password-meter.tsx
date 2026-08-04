@@ -24,10 +24,18 @@ export function scorePassword(value: string): number {
   return Math.min(score, 4);
 }
 
-const LABELS = ['Too short', 'Weak', 'Fair', 'Strong', 'Excellent'] as const;
 const COLORS = ['bg-border-strong', 'bg-danger', 'bg-warning', 'bg-success', 'bg-accent'] as const;
 
-export function PasswordMeter({ value, className }: { value: string; className?: string }) {
+export function PasswordMeter({
+  value,
+  className,
+  labels,
+}: {
+  value: string;
+  className?: string;
+  /** Translated: { label: "Password strength", levels: [5 strings] }. */
+  labels: { label: string; levels: readonly string[] };
+}) {
   const score = scorePassword(value);
 
   if (!value) return null;
@@ -48,7 +56,7 @@ export function PasswordMeter({ value, className }: { value: string; className?:
       </div>
       {/* Announced politely so it does not interrupt typing. */}
       <p className="mt-1.5 text-xs text-text-subtle" aria-live="polite">
-        Password strength: <span className="text-text-muted">{LABELS[score]}</span>
+        {labels.label}: <span className="text-text-muted">{labels.levels[score]}</span>
       </p>
     </div>
   );
