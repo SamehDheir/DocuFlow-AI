@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER } from '@nestjs/core';
+import { AuditQueryModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtMiddleware } from './auth/jwt.middleware';
 import { MulterExceptionFilter } from './common/errors/multer-exception.filter';
@@ -12,6 +13,7 @@ import { FoldersModule } from './folders/folders.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { StorageModule } from './storage/storage.module';
     StorageModule,
     FoldersModule,
     DocumentsModule,
+    AuditQueryModule,
+    UsersModule,
   ],
   providers: [
     /**
