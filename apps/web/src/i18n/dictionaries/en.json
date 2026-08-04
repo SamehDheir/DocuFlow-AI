@@ -16,11 +16,26 @@
     "isolated": "Isolated per company",
     "versioned": "Full version history",
     "stages": {
-      "uploaded": { "label": "Uploaded", "detail": "Stored in encrypted object storage" },
-      "processing": { "label": "Processing", "detail": "Thumbnails and metadata extracted" },
-      "ocr": { "label": "OCR", "detail": "Text recovered from scans and images" },
-      "ai": { "label": "AI analysis", "detail": "Summarised, classified, indexed" },
-      "ready": { "label": "Ready", "detail": "Searchable across your workspace" }
+      "uploaded": {
+        "label": "Uploaded",
+        "detail": "Stored in encrypted object storage"
+      },
+      "processing": {
+        "label": "Processing",
+        "detail": "Thumbnails and metadata extracted"
+      },
+      "ocr": {
+        "label": "OCR",
+        "detail": "Text recovered from scans and images"
+      },
+      "ai": {
+        "label": "AI analysis",
+        "detail": "Summarised, classified, indexed"
+      },
+      "ready": {
+        "label": "Ready",
+        "detail": "Searchable across your workspace"
+      }
     }
   },
   "login": {
@@ -122,7 +137,8 @@
     "stats": {
       "documents": "Documents",
       "storage": "Storage used",
-      "members": "Team members"
+      "members": "Team members",
+      "trashed": "In trash"
     },
     "empty": {
       "badge": "Coming next",
@@ -136,6 +152,11 @@
     "meta": {
       "title": "Dashboard",
       "description": "Your DocuFlow AI workspace."
+    },
+    "recent": {
+      "title": "Recent documents",
+      "empty": "Nothing uploaded yet.",
+      "viewAll": "View all"
     }
   },
   "notFound": {
@@ -148,6 +169,137 @@
       "title": "Page not found",
       "description": "The page you're looking for doesn't exist."
     }
+  },
+  "errors": {
+    "PERMISSION_DENIED": "You don't have permission to do that.",
+    "FOLDER_NOT_FOUND": "That folder no longer exists.",
+    "FOLDER_NAME_TAKEN": "A folder with this name is already here.",
+    "FOLDER_NOT_EMPTY": "This folder still has items in it. Move or delete them first.",
+    "FOLDER_CYCLE": "A folder can't be moved inside itself.",
+    "FOLDER_DEPTH_EXCEEDED": "Folders can't be nested any deeper.",
+    "DOCUMENT_NOT_FOUND": "That document no longer exists.",
+    "DOCUMENT_NOT_DELETED": "That document isn't in the trash.",
+    "FILE_REQUIRED": "Choose a file first.",
+    "FILE_TOO_LARGE": "That file is larger than the upload limit.",
+    "MIME_NOT_ALLOWED": "That file type isn't accepted.",
+    "PREVIEW_NOT_AVAILABLE": "This file type can't be previewed.",
+    "STORAGE_UNAVAILABLE": "Storage is unavailable right now. Please try again.",
+    "UPLOAD_CANCELLED": "Upload cancelled."
+  },
+  "documents": {
+    "title": "Documents",
+    "subtitle": "Everything your team has filed, in one place.",
+    "searchLabel": "Search documents",
+    "searchPlaceholder": "Search by name",
+    "upload": "Upload",
+    "uploadHint": "or drop files anywhere",
+    "newFolder": "New folder",
+    "allFiles": "All files",
+    "root": "All files",
+    "folders": "Folders",
+    "countOne": "1 document",
+    "countMany": "{count} documents",
+    "loadMore": "Load more",
+    "loadingMore": "Loading",
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "modified": "Modified",
+      "owner": "Owner",
+      "actions": "Actions"
+    },
+    "actions": {
+      "open": "Open",
+      "download": "Download",
+      "rename": "Rename",
+      "delete": "Move to trash",
+      "restore": "Restore",
+      "menu": "Actions for {name}"
+    },
+    "status": {
+      "UPLOADING": "Uploading",
+      "READY": "Ready",
+      "PROCESSING": "Processing",
+      "ARCHIVED": "Archived",
+      "DELETED": "In trash"
+    },
+    "empty": {
+      "title": "Nothing filed yet",
+      "body": "Upload your first document, or create a folder to organise what comes next."
+    },
+    "emptyFolder": {
+      "title": "This folder is empty",
+      "body": "Upload a document here, or move one in from elsewhere."
+    },
+    "emptySearch": {
+      "title": "No matches",
+      "body": "Nothing here matches “{query}”. Try a shorter or different term.",
+      "clear": "Clear search"
+    },
+    "error": {
+      "title": "Couldn't load your documents",
+      "retry": "Try again"
+    },
+    "loading": "Loading documents",
+    "meta": {
+      "title": "Documents",
+      "description": "Browse and manage your documents."
+    }
+  },
+  "upload": {
+    "title": "Upload files",
+    "dropTitle": "Drop to upload",
+    "dropBody": "Release to add these files to {folder}.",
+    "choose": "Choose files",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Retry",
+    "uploading": "Uploading {name}",
+    "complete": "Uploaded {name}",
+    "failed": "Couldn't upload {name}",
+    "progress": "{percent}% uploaded",
+    "summaryOne": "1 file uploaded",
+    "summaryMany": "{count} files uploaded"
+  },
+  "folders": {
+    "create": "New folder",
+    "createTitle": "Create a folder",
+    "nameLabel": "Folder name",
+    "namePlaceholder": "e.g. Contracts",
+    "submit": "Create folder",
+    "cancel": "Cancel",
+    "renameTitle": "Rename folder",
+    "renameSubmit": "Save name",
+    "deleteTitle": "Delete this folder?",
+    "deleteBody": "“{name}” will be removed. This cannot be undone.",
+    "deleteSubmit": "Delete folder",
+    "created": "Folder “{name}” created",
+    "renamed": "Folder renamed",
+    "deleted": "Folder deleted",
+    "errors": {
+      "required": "Give the folder a name",
+      "tooLong": "Keep it under 120 characters"
+    }
+  },
+  "trash": {
+    "title": "Trash",
+    "subtitle": "Deleted documents stay here until you restore them.",
+    "restore": "Restore",
+    "restored": "“{name}” restored",
+    "empty": {
+      "title": "Trash is empty",
+      "body": "Documents you delete will appear here."
+    },
+    "meta": {
+      "title": "Trash",
+      "description": "Restore deleted documents."
+    }
+  },
+  "confirm": {
+    "deleteDocumentTitle": "Move to trash?",
+    "deleteDocumentBody": "“{name}” can be restored from the trash later.",
+    "deleteDocumentSubmit": "Move to trash",
+    "cancel": "Cancel"
   },
   "meta": {
     "siteName": "DocuFlow AI",

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { AppShell } from '@/components/app/app-shell';
+import { ToastProvider } from '@/components/ui/toast';
 import { isLocale } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 
@@ -23,8 +24,19 @@ export default async function AppLayout({
   const dict = await getDictionary(lang);
 
   return (
-    <AppShell lang={lang} t={dict.app} common={dict.common}>
-      {children}
-    </AppShell>
+    <ToastProvider>
+      <AppShell
+        lang={lang}
+        t={dict.app}
+        common={dict.common}
+        nav={{
+          dashboard: dict.dashboard.meta.title,
+          documents: dict.documents.title,
+          trash: dict.trash.title,
+        }}
+      >
+        {children}
+      </AppShell>
+    </ToastProvider>
   );
 }

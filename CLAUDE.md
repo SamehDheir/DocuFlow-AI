@@ -4,16 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-npm-workspaces monorepo. **Auth is complete end to end, API and web**; documents, folders, and storage are not started.
+npm-workspaces monorepo. **The v1 MVP is complete end to end** — auth, storage, folders, documents, and the document UI.
 
-| Workspace       | State                                                                                                                      |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`, and the full `auth` module (see below).                 |
-| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens **wired to the live API**, guarded `/dashboard`. |
-| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy.                                               |
-| Database        | Migrations `init` and `auth_tokens` applied — 15 tables with composite tenant indexes.                                     |
+| Workspace       | State                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents` modules.         |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/trash`.                         |
+| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy.                                                                         |
+| Database        | Migrations `init` and `auth_tokens` applied — 15 tables with composite tenant indexes. **No migration was needed for documents**; the schema had it. |
 
-Sign-in works end to end. The next task is the documents MVP — `storage` → `folders` → `documents`, in that order. [NEXT_STEPS.md](NEXT_STEPS.md) §3 has the detail.
+A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash, with every mutation audited. 121 unit tests and 39 e2e tests pass.
+
+The next task is v2: OCR, AI summary, smart search, notifications, approval workflow. See §"v2 seams" at the end of this file for the decisions v1 already made on its behalf.
 
 ### Web session handling
 
@@ -41,7 +43,8 @@ Single workspace, and the Prisma commands:
 
 ```bash
 npm run test --workspace=@docuflow/api
-npm run test --workspace=@docuflow/api -- --testPathPattern=tenant
+# Jest 30 renamed this flag; --testPathPattern (singular) now errors out.
+npm run test --workspace=@docuflow/api -- --testPathPatterns=tenant
 npm run prisma:generate --workspace=@docuflow/api
 npm run prisma:migrate --workspace=@docuflow/api -- --name <migration-name>
 npm run test:e2e --workspace=@docuflow/api    # needs infra up; not run by `npm test`
@@ -51,11 +54,11 @@ npm run test:e2e --workspace=@docuflow/api    # needs infra up; not run by `npm 
 
 ## Stack (installed, not aspirational)
 
-- **API**: NestJS 11, Prisma 7 + `@prisma/adapter-pg`, `@nestjs/config`, zod 4 (env), class-validator (DTOs), jest
-- **Web**: Next.js 16 (App Router, `src/`), React 19, Tailwind 4
+- **API**: NestJS 11, Prisma 7 + `@prisma/adapter-pg`, `@nestjs/config`, zod 4 (env), class-validator (DTOs), `minio` 8, `multer` 2, jest
+- **Web**: Next.js 16 (App Router, `src/`), React 19, Tailwind 4, `motion` — no form, icon, data-fetching or component library
 - **Infra**: Postgres 17 via `pgvector/pgvector:pg17`, Redis 7, MinIO
 
-Not yet installed despite appearing in the spec: BullMQ, Swagger, MinIO client, shadcn/ui, TanStack Query, Zustand. Check `package.json` before assuming a library is available.
+Not yet installed despite appearing in the spec: BullMQ, Swagger, shadcn/ui, TanStack Query, Zustand. Check `package.json` before assuming a library is available. `apps/web` also has **no test runner**, so the CI web test step is currently a silent no-op.
 
 ### Version traps
 
@@ -63,6 +66,7 @@ Both majors moved past common training data — verify rather than recall:
 
 - **Prisma 7** removed `url` from the `datasource` block. Connection config for the CLI lives in `apps/api/prisma.config.ts`; the runtime client requires a **driver adapter** (`PrismaPg`), constructed in `prisma.service.ts`. Prisma no longer auto-loads `.env`.
 - **Next.js 16** ships its own docs at `node_modules/next/dist/docs/` — read those before writing config, per `apps/web/AGENTS.md`.
+- **Turbopack does not hot-reload the i18n dictionaries.** `getDictionary` pulls `dictionaries/{en,ar}.json` through a dynamic `import()`, and the dev server keeps the resolved module in memory. Edit a dictionary while `npm run dev` is running and Turbopack reloads the component that reads it but **not** the JSON — so new code meets an old dictionary and a freshly added key renders as `undefined`, typically as `Cannot read properties of undefined`. `npm run typecheck` will pass, because the file on disk is correct. **Restart the web dev server after touching a dictionary.**
 - **TypeScript is pinned to 6, not 7.** TypeScript 7 is the native compiler rewrite and ships the `tsc` binary only — no programmatic compiler API, which both the Nest CLI and `ts-jest` require. Under 7 the API cannot build and every test suite fails to run. The API is expected back in 7.1.
 - **ESLint is pinned to 9, not 10.** ESLint 10 removed `context.getFilename()`, and `eslint-plugin-react` (pulled in transitively by `eslint-config-next`) still calls it, so linting the web app crashes outright.
 
@@ -100,7 +104,29 @@ Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThro
 
 ## Module Layout
 
-`apps/api/src/` holds `config/`, `common/tenant/`, `common/audit/`, `prisma/`, `health/`, `permissions/`, and `auth/`. Still to be added: `users`, `companies`, `roles`, `documents`, `storage`, `ai`, `search`, `notifications`.
+`apps/api/src/` holds `config/`, `common/{tenant,audit,errors,http}/`, `prisma/`, `health/`, `permissions/`, `auth/`, `storage/`, `folders/`, and `documents/`. Still to be added: `users`, `companies`, `roles`, `ai`, `search`, `notifications`.
+
+### Authorisation
+
+Authentication and authorisation are two guards, and the order is load-bearing.
+
+- **`JwtAuthGuard`** (first `APP_GUARD`) enforces that a principal exists. Opt out with `@Public()`.
+- **`PermissionsGuard`** (second `APP_GUARD`) enforces `@RequirePermissions('documents.create')`. A route with no decorator is authenticated but unrestricted, so authentication is opt-out and authorisation is opt-in.
+- Permissions are read per request rather than carried in the JWT — a token lasts 15 minutes and revoking a role has to bite sooner than that. `PermissionsService.effectiveFor()` reads through `User`, never `UserRole`, because the join tables are only transitively scoped.
+
+### Errors
+
+Deliberate failures return `{ statusCode, code, message, errors? }`. `code` comes from `common/errors/error-codes.ts` and is what the web maps to a translated string — `message` stays as the English fallback. `PrismaExceptionFilter` and `MulterExceptionFilter` catch what slips through, so a duplicate name is a 409 and an oversized upload is a 413 rather than either being a 500.
+
+### Storage and documents
+
+- **Object keys are derived server-side, never accepted from a client** (`storage-key.ts`). Layout is `documents/company_<id>/<year>/<month>/<uuid>.<ext>`.
+- **No presigned URLs.** Downloads and previews stream through the API so every byte stays behind the same permission check; `docker/nginx/nginx.conf` is already configured for it with `proxy_buffering off` on those routes.
+- **Upload order matters**: validate → row at `UPLOADING` → bytes to MinIO → row to `READY` + version #1 + audit. A crash leaves a sweepable `UPLOADING` row rather than an object nothing references.
+- **`deletedAt` is NOT filtered by the tenant guard.** That extension handles `companyId` only, on purpose. Every document read spells out `deletedAt: null` — see the `ACTIVE` constant in `documents.service.ts`.
+- **`Document.size` is a BigInt** and does not survive `JSON.stringify`; it is serialised to a string at the controller boundary.
+- **`tenantCreate()`** wraps create payloads so Prisma's static types accept the `companyId` the guard injects at runtime. One sanctioned assertion instead of a cast per call site.
+- **A company that owns documents cannot be deleted in one statement.** `Document.owner`, `DocumentVersion.uploadedBy` and `Folder.createdBy` reference `User` with Prisma's default `Restrict`, and deleting a Company cascades to its users. Delete documents → folders → company, in that order.
 
 ### Auth
 
@@ -143,3 +169,16 @@ Sections 12 and 8 of the spec enumerate the full long-term feature surface (wate
 ## Working With the Spec
 
 [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) contains draft table sketches (companies, users, roles, permissions, documents, document_versions, document_metadata, tags, audit_logs) with column names but no types, indexes, constraints, or relations. They are a starting point for the Prisma schema, not a finished design — expect to add types, foreign keys, unique constraints, and the composite indexes that tenant-scoped queries will need.
+
+Note the spec's stack section names OpenAI/Gemini for AI and lists modules (`Departments`, `Reports`) that appear in no version plan. The `.env` default is Anthropic, and those two modules are unallocated scope — decide before building either.
+
+## v2 seams
+
+Decisions v1 already made on v2's behalf, so nothing has to be unpicked:
+
+- **Embeddings come from Voyage AI, not Anthropic** — Anthropic ships no embeddings endpoint at all. `VOYAGE_API_KEY` and `EMBEDDING_MODEL` already have optional slots in `env.validation.ts`, so v2 needs no env migration.
+- **OCR is Claude's native document/vision input**, not Tesseract — better on Arabic scans, and it collapses OCR, extraction and classification into one call. Use the Batch API (50%) for bulk backfill.
+- **`DocumentMetadata` is the extension point** for `extractedText`, `summary`, an `embedding vector(1024)` and a `tsvector`. The `vector`, `pg_trgm` and `unaccent` extensions are already installed by `docker/postgres/init/01-extensions.sql`.
+- **Reserve `derived/company_<id>/<documentId>/…`** for thumbnails and OCR page images, so generated artifacts can never collide with originals.
+- **The `status` enum still carries `PROCESSING`, `OCR` and `AI_ANALYSIS`.** v1 goes `UPLOADING → READY` directly; step 4 of the upload pipeline is where v2 hands off to a queue instead.
+- **BullMQ is still not installed**, deliberately — Redis is pinned to `noeviction` for it, but there is no async job until OCR exists.

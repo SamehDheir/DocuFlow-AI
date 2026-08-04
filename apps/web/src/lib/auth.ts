@@ -2,72 +2,27 @@
  * Auth API client.
  *
  * The access token is never stored here. It lives in memory in the session
- * provider, and every call that needs it is handed it explicitly — see
- * `apiFetch`. Persisting it to localStorage would put a bearer token somewhere
- * any injected script can read it, and the httpOnly refresh cookie already
- * covers surviving a reload.
+ * provider, and every call that needs it is handed it explicitly. Persisting it
+ * to localStorage would put a bearer token somewhere any injected script can
+ * read it, and the httpOnly refresh cookie already covers surviving a reload.
+ *
+ * The transport itself now lives in lib/api.ts, shared with documents and
+ * folders.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+import { ApiError, apiFetch } from './api';
 
-export class AuthError extends Error {
-  constructor(
-    message: string,
-    /** Field-level messages, keyed by form field name. */
-    readonly fields?: Record<string, string>,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = 'AuthError';
-  }
-}
-
-interface ApiErrorBody {
-  message?: string | string[];
-  errors?: Record<string, string>;
-}
-
-async function parseError(response: Response): Promise<AuthError> {
-  let parsed: ApiErrorBody = {};
-
-  try {
-    parsed = (await response.json()) as ApiErrorBody;
-  } catch {
-    // Non-JSON error body (a proxy timeout page, for instance).
-  }
-
-  const message = Array.isArray(parsed.message) ? parsed.message[0] : parsed.message;
-
-  return new AuthError(
-    message ?? 'Something went wrong. Please try again.',
-    parsed.errors,
-    response.status,
-  );
-}
-
-async function request<T>(path: string, init: RequestInit): Promise<T> {
-  let response: Response;
-
-  try {
-    response = await fetch(`${API_URL}/api${path}`, {
-      ...init,
-      // The refresh token arrives as an httpOnly cookie, which requires
-      // credentials on every auth call.
-      credentials: 'include',
-    });
-  } catch {
-    throw new AuthError('Cannot reach the authentication service. Check that the API is running.');
-  }
-
-  if (!response.ok) {
-    throw await parseError(response);
-  }
-
-  return (await response.json()) as T;
-}
+/**
+ * Kept as an alias rather than a separate class.
+ *
+ * The auth forms catch `AuthError` in a dozen places, and SessionProvider keys
+ * its 401-retry off it. One error type across the whole client means a
+ * documents call that expires mid-flight is renewed by the same path.
+ */
+export { ApiError as AuthError };
 
 function post<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
+  return apiFetch<T>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
@@ -123,7 +78,7 @@ export function signOut() {
 }
 
 export function fetchProfile(accessToken: string) {
-  return request<Profile>('/auth/me', {
+  return apiFetch<Profile>('/auth/me', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
