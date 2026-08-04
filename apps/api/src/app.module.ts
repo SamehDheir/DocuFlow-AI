@@ -1,5 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './auth/auth.module';
+import { JwtMiddleware } from './auth/jwt.middleware';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { validateEnv } from './config/env.validation';
 import { HealthModule } from './health/health.module';
@@ -21,13 +23,21 @@ import { PrismaModule } from './prisma/prisma.module';
       validate: validateEnv,
     }),
     PrismaModule,
+    AuthModule,
     HealthModule,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    // Applied to every route so no future controller can be added without
-    // tenant context being considered.
-    consumer.apply(TenantMiddleware).forRoutes('*');
+    /**
+     * Order is execution order, and it matters: JwtMiddleware resolves the
+     * principal that TenantMiddleware reads to bind the company. Reversed, no
+     * request would ever carry tenant context and every tenant-scoped query
+     * would fail closed.
+     *
+     * Applied to every route so no future controller can be added without
+     * tenant context being considered.
+     */
+    consumer.apply(JwtMiddleware, TenantMiddleware).forRoutes('*');
   }
 }

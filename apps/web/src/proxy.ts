@@ -19,6 +19,27 @@ const COOKIE = 'docuflow-locale';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
+ * Session routing.
+ *
+ * The API's refresh cookie is scoped to /api/auth and is therefore invisible
+ * here, so it sets a separate path-/ flag purely so this can run. The flag is a
+ * hint: it survives revocation and proves nothing. Its only job is to send a
+ * navigation somewhere sensible without a flash of the wrong page — every
+ * protected read is still authorised by the API against a real token.
+ */
+const SESSION_COOKIE = 'docuflow_session';
+
+/** Pages that require a session, matched by path after the locale segment. */
+const PROTECTED = ['/dashboard'];
+
+/** Pages that make no sense once signed in. */
+const AUTH_ONLY = ['/login', '/register', '/forgot-password'];
+
+function matches(path: string, routes: string[]): boolean {
+  return routes.some((route) => path === route || path.startsWith(`${route}/`));
+}
+
+/**
  * Pick a locale from Accept-Language.
  *
  * Hand-rolled rather than pulling in Negotiator + intl-localematcher: with two
@@ -56,9 +77,31 @@ export function proxy(request: NextRequest) {
   );
 
   if (hasLocale) {
+    const current = pathname.split('/')[1];
+    const locale = isLocale(current) ? current : defaultLocale;
+    const route = pathname.slice(`/${current}`.length) || '/';
+    const signedIn = request.cookies.has(SESSION_COOKIE);
+
+    if (!signedIn && matches(route, PROTECTED)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${locale}/login`;
+      // Remembered so signing in resumes where the reader was headed, rather
+      // than dumping them on the dashboard and making them navigate again.
+      url.searchParams.set('next', pathname);
+
+      return NextResponse.redirect(url);
+    }
+
+    if (signedIn && matches(route, AUTH_ONLY)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/${locale}/dashboard`;
+      url.search = '';
+
+      return NextResponse.redirect(url);
+    }
+
     // Persist the locale the reader is actually browsing, so a manual switch
     // survives the next visit.
-    const current = pathname.split('/')[1];
     const response = NextResponse.next();
 
     if (isLocale(current) && request.cookies.get(COOKIE)?.value !== current) {

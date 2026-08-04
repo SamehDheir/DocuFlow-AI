@@ -1,11 +1,13 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import type { Env } from './config/env.validation';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService<Env, true>);
 
   /**
@@ -21,6 +23,22 @@ async function bootstrap(): Promise<void> {
     origin: config.get('CORS_ORIGIN', { infer: true }),
     credentials: true,
   });
+
+  // The refresh token travels as an httpOnly cookie, which has to be parsed
+  // before any handler can read it. `credentials: true` above is the other half
+  // of that arrangement.
+  app.use(cookieParser());
+
+  /**
+   * Behind nginx (docker/nginx/nginx.conf), the client address arrives in
+   * X-Forwarded-For and req.ip would otherwise report the proxy on every audit
+   * row. Trust is limited to production because in development nothing sits in
+   * front of this process, and an unconditional trust would let any caller
+   * forge the IP recorded against their actions.
+   */
+  if (config.get('NODE_ENV', { infer: true }) === 'production') {
+    app.set('trust proxy', 1);
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({

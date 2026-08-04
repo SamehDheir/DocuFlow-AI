@@ -1,11 +1,21 @@
 import { PrismaClient } from '@prisma/client';
+import type { ITXClientDenyList } from '@prisma/client/runtime/client';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 
 /**
  * Models that carry a `companyId` column and are therefore filtered
  * automatically. Keep in sync with prisma/schema.prisma.
  */
-const TENANT_SCOPED_MODELS = new Set(['User', 'Role', 'Folder', 'Document', 'Tag', 'AuditLog']);
+const TENANT_SCOPED_MODELS = new Set([
+  'User',
+  'Role',
+  'Folder',
+  'Document',
+  'Tag',
+  'AuditLog',
+  'RefreshToken',
+  'PasswordResetToken',
+]);
 
 /**
  * Company is the tenant itself: its primary key IS the companyId, so it is
@@ -131,3 +141,9 @@ export function applyTenantGuard(client: PrismaClient, tenant: TenantContextServ
 }
 
 export type TenantGuardedClient = ReturnType<typeof applyTenantGuard>;
+
+/**
+ * The client handed to a `$transaction` callback: the same delegates, minus the
+ * methods that cannot be nested inside a transaction.
+ */
+export type TenantTransactionClient = Omit<TenantGuardedClient, ITXClientDenyList>;
