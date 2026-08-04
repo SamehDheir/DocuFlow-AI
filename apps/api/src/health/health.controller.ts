@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface HealthResponse {
@@ -17,7 +18,11 @@ interface HealthResponse {
  * Always returns HTTP 200, with the real state in the body. A non-200 would make
  * Docker restart the container on a transient database blip, turning a
  * recoverable dependency failure into a crash loop.
+ *
+ * Unauthenticated: Docker's HEALTHCHECK has no credentials to present, and a
+ * probe that 401s reads as an unhealthy container.
  */
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}

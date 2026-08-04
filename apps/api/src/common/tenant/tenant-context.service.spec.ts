@@ -51,8 +51,8 @@ describe('TenantContextService', () => {
     expect(seen).toEqual(['company-b', 'company-a']);
   });
 
-  it('reports bypass and withholds a company id under runAsSystem()', () => {
-    service.runAsSystem(() => {
+  it('reports bypass and withholds a company id under runAsSystem()', async () => {
+    await service.runAsSystem(() => {
       expect(service.isBypassed()).toBe(true);
       // Must not surface a usable company id — callers should never silently
       // scope to the empty-string tenant.
@@ -60,6 +60,17 @@ describe('TenantContextService', () => {
     });
 
     expect(service.isBypassed()).toBe(false);
+  });
+
+  it('keeps bypass bound while a lazily-executed callback settles', async () => {
+    // Prisma promises issue no query until awaited. A callback that returns one
+    // unawaited must still resolve inside the bypass, or the query lands
+    // outside it and fails closed — which is how login and refresh break.
+    const deferred = await service.runAsSystem(() =>
+      Promise.resolve().then(() => service.isBypassed()),
+    );
+
+    expect(deferred).toBe(true);
   });
 
   it('allows an inner context to override an outer one', () => {

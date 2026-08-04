@@ -21,7 +21,13 @@ export interface TenantStore {
 export class TenantContextService {
   private readonly storage = new AsyncLocalStorage<TenantStore>();
 
-  /** Run `fn` with tenant context bound. Used by TenantMiddleware per request. */
+  /**
+   * Run `fn` with tenant context bound. Used by TenantMiddleware per request,
+   * where `fn` is `next()` and the whole handler therefore executes inside.
+   *
+   * Calling this directly with a callback that RETURNS a Prisma query without
+   * awaiting it will lose the context — see runAsSystem() for why.
+   */
   run<T>(store: TenantStore, fn: () => T): T {
     return this.storage.run(store, fn);
   }
@@ -33,9 +39,16 @@ export class TenantContextService {
    *
    * Deliberately explicit and named so it stands out in review — this is the
    * one way to bypass tenant filtering.
+   *
+   * The callback is awaited INSIDE the context rather than merely invoked
+   * there. Prisma promises are lazy: they issue no query until something calls
+   * `.then()`, so `runAsSystem(() => db.user.findMany())` would hand the
+   * unexecuted promise back to a caller who awaits it after this scope has
+   * already unwound, and the query would then run with no bypass and fail
+   * closed. Awaiting here makes that shape safe rather than a trap.
    */
-  runAsSystem<T>(fn: () => T): T {
-    return this.storage.run({ companyId: '', bypass: true }, fn);
+  async runAsSystem<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.storage.run({ companyId: '', bypass: true }, async () => await fn());
   }
 
   getStore(): TenantStore | undefined {
