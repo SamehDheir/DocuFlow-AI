@@ -310,5 +310,64 @@
     "titleTemplate": "%s · DocuFlow AI",
     "defaultTitle": "DocuFlow AI",
     "description": "إدارة مستندات للشركات مدعومة بالذكاء الاصطناعي — مستودع واحد آمن، وسجل إصدارات كامل، وإجابات مستخرجة من ملفاتك."
+  },
+  "activity": {
+    "title": "النشاط",
+    "subtitle": "كل تغيير جرى في مساحة العمل، الأحدث أولاً.",
+    "viewAll": "عرض الكل",
+    "loadMore": "تحميل المزيد",
+    "loading": "جارٍ تحميل النشاط",
+    "system": "النظام",
+    "filters": {
+      "action": "الإجراء",
+      "allActions": "كل الإجراءات",
+      "entity": "النوع",
+      "allEntities": "كل الأنواع",
+      "clear": "مسح عوامل التصفية"
+    },
+    "entities": {
+      "Document": "المستندات",
+      "Folder": "المجلدات",
+      "User": "الأشخاص",
+      "Company": "مساحة العمل",
+      "RefreshToken": "الجلسات"
+    },
+    "empty": {
+      "title": "لم يحدث شيء بعد",
+      "body": "عمليات الرفع وإعادة التسمية والحذف ستظهر هنا فور حدوثها."
+    },
+    "emptyFiltered": {
+      "title": "لا نشاط مطابق",
+      "body": "لا توجد سجلات تطابق عوامل التصفية المختارة."
+    },
+    "error": {
+      "title": "تعذّر تحميل النشاط",
+      "retry": "إعادة المحاولة"
+    },
+    "meta": {
+      "title": "النشاط",
+      "description": "سجل التدقيق الخاص بمساحة عملك."
+    },
+    "actions": {
+      "auth.register": "أنشأ مساحة العمل",
+      "auth.login": "سجّل الدخول",
+      "auth.login_failed": "فشلت محاولة تسجيل دخوله",
+      "auth.login_blocked": "مُنع من تسجيل الدخول",
+      "auth.logout": "سجّل الخروج",
+      "auth.password_reset_requested": "طلب إعادة تعيين كلمة المرور",
+      "auth.password_reset_completed": "أعاد تعيين كلمة المرور",
+      "auth.refresh_reuse_detected": "أُلغيت جلسته بسبب إعادة استخدام رمز",
+      "document.upload": "رفع مستنداً",
+      "document.rename": "أعاد تسمية مستند",
+      "document.move": "نقل مستنداً",
+      "document.delete": "نقل مستنداً إلى المحذوفات",
+      "document.restore": "استعاد مستنداً",
+      "document.download": "نزّل مستنداً",
+      "document.preview": "عاين مستنداً",
+      "folder.create": "أنشأ مجلداً",
+      "folder.rename": "أعاد تسمية مجلد",
+      "folder.move": "نقل مجلداً",
+      "folder.delete": "حذف مجلداً"
+    }
   }
 }

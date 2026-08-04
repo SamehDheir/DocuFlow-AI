@@ -187,7 +187,30 @@ export async function fetchDocumentBlob(
     throw new ApiError('That file could not be downloaded.', undefined, response.status);
   }
 
-  return URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+
+  /**
+   * An inline preview is re-typed from OUR allowlist, never from the response.
+   *
+   * A blob: URL renders according to the blob's MIME type, and the response's
+   * type traces back to `documents.mime_type`, which the uploading client
+   * supplied. Left alone, a file that is really HTML but was declared as
+   * application/pdf would be rendered as HTML inside our own origin by the
+   * preview iframe — script execution against a real session.
+   *
+   * Re-wrapping with a type this module chose makes that impossible: HTML bytes
+   * labelled application/pdf reach the PDF viewer and simply fail to parse.
+   * Downloads skip this — they are never rendered, and the original type is
+   * what the file should be saved as.
+   */
+  if (inline) {
+    const declared = blob.type.toLowerCase();
+    const safe = PREVIEWABLE.has(declared) ? declared : 'application/octet-stream';
+
+    return URL.createObjectURL(new Blob([blob], { type: safe }));
+  }
+
+  return URL.createObjectURL(blob);
 }
 
 export interface UploadHandle {

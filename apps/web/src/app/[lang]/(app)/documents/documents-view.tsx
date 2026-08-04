@@ -3,7 +3,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
-import { canPreview, DocumentPreview } from '@/components/documents/document-preview';
+import { DocumentPreview } from '@/components/documents/document-preview';
 import { DocumentRow, type RowAction } from '@/components/documents/document-row';
 import { DropZone } from '@/components/documents/drop-zone';
 import { FolderTree } from '@/components/documents/folder-tree';
@@ -201,11 +201,9 @@ export function DocumentsView({
   };
 
   const actionsFor = (item: DocumentSummary): RowAction[] => [
-    // Offered only for what the API will actually stream inline, so the menu
-    // never carries an action that is guaranteed to fail.
-    ...(canPreview(item)
-      ? [{ key: 'preview', label: t.actions.open, onSelect: () => setPreviewing(item) }]
-      : []),
+    // Offered for every document. The dialog itself explains the types it
+    // cannot render, which is steadier than an action that comes and goes.
+    { key: 'preview', label: t.actions.open, onSelect: () => setPreviewing(item) },
     { key: 'download', label: t.actions.download, onSelect: () => void download(item) },
     {
       key: 'delete',
@@ -354,9 +352,8 @@ export function DocumentsView({
                         t={t}
                         actions={actionsFor(item)}
                         // Clicking the name is the quickest path to a look at
-                        // the file; for anything not previewable the name stays
-                        // plain text rather than a button that does nothing.
-                        onOpen={canPreview(item) ? () => setPreviewing(item) : undefined}
+                        // the file.
+                        onOpen={() => setPreviewing(item)}
                       />
                     ))}
                   </div>

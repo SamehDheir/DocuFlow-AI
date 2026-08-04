@@ -4,23 +4,33 @@ import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { ActivityRow } from '@/components/activity/activity-row';
 import { useSession } from '@/components/auth/session-provider';
+import { DocumentPreview } from '@/components/documents/document-preview';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
+import { listActivity, type ActivityEntry } from '@/lib/activity';
 import { fetchProfile, type Profile } from '@/lib/auth';
 import {
+  fetchDocumentBlob,
   formatBytes,
   getStats,
   listDocuments,
   type DocumentSummary,
   type StorageStats,
 } from '@/lib/documents';
+import { errorMessage } from '@/lib/error-message';
 import { respectMotion, riseItem, stagger } from '@/lib/motion';
+import { listUsers } from '@/lib/users';
 
 type DashboardStrings = Dictionary['dashboard'];
 type CommonStrings = Dictionary['common'];
+
+/** Entries shown inline. The full trail lives at /activity. */
+const RECENT_ACTIVITY = 8;
 
 type State =
   { kind: 'loading' } | { kind: 'ready'; profile: Profile } | { kind: 'error'; message: string };
@@ -28,19 +38,29 @@ type State =
 export function DashboardView({
   lang,
   t,
+  tActivity,
+  tDocuments,
+  errors,
   common,
 }: {
   lang: Locale;
   t: DashboardStrings;
+  tActivity: Dictionary['activity'];
+  tDocuments: Dictionary['documents'];
+  errors: Dictionary['errors'];
   common: CommonStrings;
 }) {
   const { status, withToken } = useSession();
   const reduced = useReducedMotion();
   const router = useRouter();
+  const toast = useToast();
 
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [recent, setRecent] = useState<DocumentSummary[]>([]);
+  const [members, setMembers] = useState<number | null>(null);
+  const [activity, setActivity] = useState<ActivityEntry[] | null>(null);
+  const [previewing, setPreviewing] = useState<DocumentSummary | null>(null);
   /** Bumped to re-run the effect below; retry is otherwise identical to load. */
   const [attempt, setAttempt] = useState(0);
 
@@ -63,14 +83,27 @@ export function DashboardView({
         if (!current) return;
         setState({ kind: 'ready', profile });
 
-        const [totals, page] = await Promise.all([
+        /**
+         * Each panel settles on its own.
+         *
+         * allSettled, not all: the trail and the member count sit behind
+         * `audit.read` and `users.read`, which a Member-role account does not
+         * hold. One 403 must not blank the storage figures beside it, so a
+         * rejected panel simply stays absent.
+         */
+        const [totals, page, people, trail] = await Promise.allSettled([
           withToken(getStats),
           withToken((token) => listDocuments(token, { limit: 5 })),
+          withToken(listUsers),
+          withToken((token) => listActivity(token, { limit: RECENT_ACTIVITY })),
         ]);
 
         if (!current) return;
-        setStats(totals);
-        setRecent(page.items);
+
+        if (totals.status === 'fulfilled') setStats(totals.value);
+        if (page.status === 'fulfilled') setRecent(page.value.items);
+        if (people.status === 'fulfilled') setMembers(people.value.total);
+        if (trail.status === 'fulfilled') setActivity(trail.value.items);
       } catch (error) {
         if (current) {
           setState({
@@ -91,6 +124,24 @@ export function DashboardView({
   function retry() {
     setState({ kind: 'loading' });
     setAttempt((value) => value + 1);
+  }
+
+  /**
+   * A failed download is reported in a toast, not by blanking the page — the
+   * dashboard behind it is still perfectly valid.
+   */
+  async function download(item: DocumentSummary) {
+    try {
+      const url = await withToken((token) => fetchDocumentBlob(token, item.id));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = item.originalName;
+      anchor.click();
+      // Revoked on the next tick, or the blob is pinned for the page's life.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+      toast.error(errorMessage(error, errors, common.genericError));
+    }
   }
 
   const variants = respectMotion(riseItem, reduced);
@@ -136,7 +187,7 @@ export function DashboardView({
         Real numbers now that the documents module exists. Storage is the tile
         that answers the question a customer actually asks first, so it leads.
       */}
-      <motion.dl variants={variants} className="mt-4 grid gap-4 sm:grid-cols-3">
+      <motion.dl variants={variants} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Facts
           label={t.stats.storage}
           value={stats ? formatBytes(stats.storageBytes, lang) : '—'}
@@ -148,6 +199,12 @@ export function DashboardView({
         <Facts
           label={t.stats.trashed}
           value={stats ? new Intl.NumberFormat(lang).format(stats.trashed) : '—'}
+        />
+        {/* Absent rather than zero when `users.read` is not held — a hard 0
+            would be a claim, and the wrong one. */}
+        <Facts
+          label={t.stats.members}
+          value={members === null ? '—' : new Intl.NumberFormat(lang).format(members)}
         />
       </motion.dl>
 
@@ -184,9 +241,14 @@ export function DashboardView({
                   {item.extension.slice(0, 4)}
                 </span>
 
-                <span className="latin min-w-0 flex-1 truncate text-sm" title={item.name}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewing(item)}
+                  className="latin min-w-0 flex-1 truncate rounded-sm text-start text-sm hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  title={item.name}
+                >
                   {item.name}
-                </span>
+                </button>
 
                 <span className="shrink-0 text-xs text-text-subtle">
                   {formatBytes(item.size, lang)}
@@ -196,6 +258,48 @@ export function DashboardView({
           </ul>
         )}
       </motion.section>
+
+      {/*
+        Omitted entirely when `audit.read` is not held, rather than rendered as
+        an error. A Member sees a dashboard that simply has no trail on it,
+        which is the truth of what they may see.
+      */}
+      {activity !== null ? (
+        <motion.section
+          variants={variants}
+          className="mt-4 overflow-hidden rounded-xl border border-border bg-surface"
+        >
+          <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-3">
+            <h2 className="text-sm font-medium">{tActivity.title}</h2>
+            <Link
+              href={`/${lang}/activity`}
+              className="text-accent rounded-md text-xs hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            >
+              {tActivity.viewAll}
+            </Link>
+          </header>
+
+          {activity.length === 0 ? (
+            <p className="text-text-muted px-6 py-10 text-center text-sm">{tActivity.empty.body}</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {activity.map((entry) => (
+                <ActivityRow key={entry.id} entry={entry} locale={lang} t={tActivity} />
+              ))}
+            </ul>
+          )}
+        </motion.section>
+      ) : null}
+
+      <DocumentPreview
+        key={previewing?.id ?? 'none'}
+        item={previewing}
+        onClose={() => setPreviewing(null)}
+        t={tDocuments}
+        errors={errors}
+        common={common}
+        onDownload={(item) => void download(item)}
+      />
     </motion.div>
   );
 }

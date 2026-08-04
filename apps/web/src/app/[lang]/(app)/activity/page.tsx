@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { isLocale, locales } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { DashboardView } from './dashboard-view';
+import { ActivityView } from './activity-view';
 
 export async function generateMetadata({
   params,
@@ -15,29 +15,20 @@ export async function generateMetadata({
   const dict = await getDictionary(lang);
 
   return {
-    title: dict.dashboard.meta.title,
-    description: dict.dashboard.meta.description,
+    title: dict.activity.meta.title,
+    description: dict.activity.meta.description,
     alternates: {
-      canonical: `/${lang}/dashboard`,
-      languages: Object.fromEntries(locales.map((l) => [l, `/${l}/dashboard`])),
+      canonical: `/${lang}/activity`,
+      languages: Object.fromEntries(locales.map((l) => [l, `/${l}/activity`])),
     },
   };
 }
 
-export default async function DashboardPage({ params }: { params: Promise<{ lang: string }> }) {
+export default async function ActivityPage({ params }: { params: Promise<{ lang: string }> }) {
   const { lang } = await params;
   if (!isLocale(lang)) notFound();
 
   const dict = await getDictionary(lang);
 
-  return (
-    <DashboardView
-      lang={lang}
-      t={dict.dashboard}
-      tActivity={dict.activity}
-      tDocuments={dict.documents}
-      errors={dict.errors}
-      common={dict.common}
-    />
-  );
+  return <ActivityView lang={lang} t={dict.activity} errors={dict.errors} common={dict.common} />;
 }

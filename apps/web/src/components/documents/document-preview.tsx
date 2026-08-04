@@ -47,8 +47,20 @@ export function DocumentPreview({
    */
   const [state, setState] = useState<State>({ kind: 'loading' });
 
+  const renderable = item !== null && isPreviewable(item.mimeType);
+
   useEffect(() => {
     if (!item) return;
+
+    /**
+     * A type the API will not stream inline never gets fetched at all — the
+     * request would only come back 400 PREVIEW_NOT_AVAILABLE. The dialog still
+     * opens and says so, with the download beside it, because an action that
+     * silently does nothing is worse than one that explains itself. That state
+     * is derived from `renderable` at render time rather than stored, so
+     * nothing has to be set here.
+     */
+    if (!renderable) return;
 
     let url: string | undefined;
     let current = true;
@@ -77,7 +89,7 @@ export function DocumentPreview({
       current = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [item, withToken, errors, common.genericError]);
+  }, [item, renderable, withToken, errors, common.genericError]);
 
   if (!item) return null;
 
@@ -98,7 +110,22 @@ export function DocumentPreview({
         </>
       }
     >
-      {state.kind === 'loading' ? (
+      {!renderable ? (
+        <div className="border-border bg-surface-inset flex flex-col items-center rounded-lg border px-6 py-14 text-center">
+          <span
+            aria-hidden="true"
+            className="border-border bg-surface text-text-subtle flex size-14 items-center justify-center rounded-xl border text-xs font-medium tracking-wide uppercase"
+          >
+            {item.extension.slice(0, 4)}
+          </span>
+
+          <p className="text-text-muted mt-5 max-w-sm text-sm text-balance">
+            {errors.PREVIEW_NOT_AVAILABLE}
+          </p>
+        </div>
+      ) : null}
+
+      {renderable && state.kind === 'loading' ? (
         <div
           className="bg-surface-inset h-[60dvh] w-full animate-pulse rounded-lg"
           aria-busy="true"
@@ -114,7 +141,7 @@ export function DocumentPreview({
         </div>
       ) : null}
 
-      {state.kind === 'ready' ? (
+      {renderable && state.kind === 'ready' ? (
         image ? (
           // eslint-disable-next-line @next/next/no-img-element -- a blob: URL cannot go through next/image, which needs a resolvable source.
           <img
@@ -124,15 +151,25 @@ export function DocumentPreview({
           />
         ) : (
           /*
-           * Sandboxed, and deliberately without allow-scripts: this renders
-           * bytes another user of the same company uploaded, inside our own
-           * origin. The API sets the same sandbox in a CSP header on the
-           * route; this is the second half of that.
+           * No `sandbox` attribute, which needs justifying.
+           *
+           * A sandboxed frame gets an opaque origin, and a blob: URL can only
+           * be read by the origin that minted it — so `sandbox=""` meant the
+           * frame could never load this at all. Chrome reports that as "This
+           * page has been blocked by Chrome", which is what it did.
+           *
+           * What replaces it is control of the TYPE rather than the frame: the
+           * blob is re-wrapped in fetchDocumentBlob with a MIME type taken from
+           * our own allowlist, never from the response. That is the part that
+           * matters, because `documents.mime_type` ultimately came from the
+           * uploading client — bytes that are really HTML, stored as
+           * application/pdf, would otherwise render as HTML in our origin.
+           * Forced to application/pdf they go to the PDF viewer and fail to
+           * parse, which is the correct outcome.
            */
           <iframe
             src={state.url}
             title={item.name}
-            sandbox=""
             className="border-border h-[70dvh] w-full rounded-lg border"
           />
         )
@@ -141,7 +178,14 @@ export function DocumentPreview({
   );
 }
 
-/** Whether the preview action should be offered for this document at all. */
+/**
+ * Whether the dialog will actually render this file's contents.
+ *
+ * NOT a gate on offering the action: the preview is offered for every document,
+ * because a button that appears and disappears by file type reads as broken. A
+ * type this returns false for opens the dialog on an explanatory state with the
+ * download beside it.
+ */
 export function canPreview(item: DocumentSummary): boolean {
   return isPreviewable(item.mimeType);
 }

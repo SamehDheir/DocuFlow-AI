@@ -32,7 +32,7 @@ export function AppShell({
   t: Dictionary['app'];
   common: Dictionary['common'];
   /** Labels for the primary navigation, from the documents and trash namespaces. */
-  nav: { documents: string; trash: string; dashboard: string };
+  nav: { documents: string; trash: string; dashboard: string; activity: string };
   children: React.ReactNode;
 }) {
   const { status } = useSession();
@@ -101,7 +101,7 @@ function PrimaryNav({
   nav,
 }: {
   lang: Locale;
-  nav: { documents: string; trash: string; dashboard: string };
+  nav: { documents: string; trash: string; dashboard: string; activity: string };
 }) {
   const pathname = usePathname();
 
@@ -109,6 +109,7 @@ function PrimaryNav({
     { href: `/${lang}/dashboard`, label: nav.dashboard },
     { href: `/${lang}/documents`, label: nav.documents },
     { href: `/${lang}/trash`, label: nav.trash },
+    { href: `/${lang}/activity`, label: nav.activity },
   ];
 
   return (
