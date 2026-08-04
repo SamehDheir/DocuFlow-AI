@@ -76,6 +76,18 @@ export function signIn(input: { email: string; password: string }) {
   return post<{ accessToken: string; user: SessionUser }>('/auth/login', input);
 }
 
+/**
+ * Request a password reset link.
+ *
+ * The endpoint is expected to return 200 whether or not the address is
+ * registered. Returning 404 for unknown emails would turn this into an account
+ * enumeration oracle — anyone could test which addresses have accounts. The UI
+ * shows the same confirmation either way for the same reason.
+ */
+export function requestPasswordReset(input: { email: string }) {
+  return post<{ ok: true }>('/auth/forgot-password', input);
+}
+
 export function registerCompany(input: {
   companyName: string;
   firstName: string;

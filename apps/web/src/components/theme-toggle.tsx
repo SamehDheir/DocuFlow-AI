@@ -46,7 +46,14 @@ function getServerSnapshot(): Theme {
   return 'light';
 }
 
-export function ThemeToggle({ className }: { className?: string }) {
+export function ThemeToggle({
+  className,
+  labels,
+}: {
+  className?: string;
+  /** Translated, supplied by the server layout that already loaded the dictionary. */
+  labels: { toLight: string; toDark: string };
+}) {
   const reduced = useReducedMotion();
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
@@ -70,7 +77,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
-      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      aria-label={theme === 'dark' ? labels.toLight : labels.toDark}
       className={cn(
         'relative inline-flex size-9 items-center justify-center rounded-lg',
         'text-text-muted transition-colors duration-fast',

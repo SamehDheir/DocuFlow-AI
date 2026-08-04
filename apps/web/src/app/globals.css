@@ -392,6 +392,37 @@
     text-wrap: balance;
   }
 
+  /* -------------------------------------------------------------------------
+   * Arabic typography
+   *
+   * IBM Plex has no Arabic serif, so display headings switch to the Arabic sans
+   * rather than falling through to a system serif that would not match the
+   * Latin face at all.
+   *
+   * letter-spacing MUST be reset. Arabic is a joining script: negative tracking
+   * pulls letterforms apart at their connection points, which does not look
+   * "tight", it looks broken. The same applies to any `tracking-*` utility used
+   * on Arabic text.
+   * ---------------------------------------------------------------------- */
+  [dir='rtl'] body {
+    font-family:
+      var(--font-plex-arabic), var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  [dir='rtl'] :is(h1, h2, h3) {
+    font-family: var(--font-plex-arabic), var(--font-plex-sans), ui-sans-serif, sans-serif;
+    letter-spacing: normal;
+  }
+
+  /* Latin fragments inside Arabic copy — brand name, email placeholders — keep
+   * the Latin face so "DocuFlow" does not render in the Arabic font's Latin
+   * subset, which is designed for harmony with Arabic rather than to stand alone. */
+  [dir='rtl'] .latin {
+    font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
   p {
     text-wrap: pretty;
   }
