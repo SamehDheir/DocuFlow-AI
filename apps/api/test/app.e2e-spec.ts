@@ -1,8 +1,6 @@
-import { INestApplication } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 
 /**
  * End-to-end tests boot the real AppModule, which validates the environment and
@@ -14,16 +12,10 @@ import { AppModule } from './../src/app.module';
  * `npm test` (jest's rootDir is src/), and CI does not run them yet.
  */
 describe('Health (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: NestExpressApplication;
 
   beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api', { exclude: ['health'] });
-    await app.init();
+    app = await createTestApp();
   });
 
   afterEach(async () => {

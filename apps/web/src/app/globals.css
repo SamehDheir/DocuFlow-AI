@@ -6,9 +6,18 @@
  * ============================================================================
  *
  * Direction: "Archive". Warm paper neutrals, deep ink text, and a single
- * verdigris accent (the patina of aged copper — an archival reference, and a
- * deliberate move away from the default indigo/violet that makes generic
- * dashboards recognisable at a glance).
+ * copper accent — an archival, physical reference (aged metal against paper),
+ * and a deliberate move away from the default indigo/violet that makes generic
+ * dashboards recognisable at a glance.
+ *
+ * Because copper sits at hue ~55, the status colours are spaced around it so
+ * none of them can be confused for the primary action:
+ *   danger 20 · copper 55 · warning 90 · success 155
+ * Warning in particular was moved off amber (72) toward yellow-gold, which
+ * would otherwise have read as a muted version of the accent.
+ *
+ * Contrast is verified, not assumed: accent-fg on accent is 5.57:1 in light and
+ * 8.53:1 in dark; accent on canvas is 5.47:1 and 8.80:1. All exceed WCAG AA.
  *
  * RULE: components consume SEMANTIC tokens (--color-surface, --color-text-muted),
  * never raw palette steps and never hex literals. That indirection is what keeps
@@ -34,28 +43,45 @@
   --border-strong: oklch(0.836 0.009 85);
 
   --text: oklch(0.235 0.012 75);
-  --text-muted: oklch(0.475 0.011 75);
-  --text-subtle: oklch(0.625 0.009 75);
+  --text-muted: oklch(0.44 0.011 75);
+  /* Was 0.625, which measured 3.29:1 against surface-inset — below AA and
+   * visibly washed out on the near-white light canvas. Hints, placeholders and
+   * meter labels all use this token, so it has to clear 4.5:1 like any other
+   * text; "de-emphasised" is not an exemption from being readable. */
+  --text-subtle: oklch(0.535 0.009 75);
   --text-inverse: oklch(0.985 0.004 85);
 
-  --accent: oklch(0.505 0.089 195);
-  --accent-hover: oklch(0.445 0.093 195);
-  --accent-active: oklch(0.395 0.09 195);
-  --accent-fg: oklch(0.995 0.002 195);
-  --accent-subtle: oklch(0.955 0.023 195);
-  --accent-border: oklch(0.845 0.05 195);
+  --accent: oklch(0.52 0.12 55);
+  --accent-hover: oklch(0.455 0.125 52);
+  --accent-active: oklch(0.4 0.115 50);
+  --accent-fg: oklch(0.99 0.005 55);
+  --accent-subtle: oklch(0.96 0.028 62);
+  --accent-border: oklch(0.85 0.062 58);
 
   --success: oklch(0.53 0.108 155);
   --success-subtle: oklch(0.955 0.03 155);
-  --warning: oklch(0.63 0.13 72);
-  --warning-subtle: oklch(0.965 0.04 72);
-  --danger: oklch(0.545 0.175 22);
-  --danger-subtle: oklch(0.962 0.028 22);
-  --danger-border: oklch(0.845 0.075 22);
+  --warning: oklch(0.66 0.135 90);
+  --warning-subtle: oklch(0.966 0.042 90);
+  --danger: oklch(0.535 0.185 20);
+  --danger-subtle: oklch(0.962 0.03 20);
+  --danger-border: oklch(0.845 0.08 20);
 
-  --focus: oklch(0.505 0.089 195);
+  --focus: oklch(0.52 0.12 55);
 
-  --shadow-color: 75 12% 22%;
+  --shadow-color: 55 14% 22%;
+
+  /* ---------------------------------------------------------------------
+   * Brand panel (auth shell).
+   *
+   * Deliberately NOT theme-flipping: the panel stays dark in light mode too,
+   * which is what gives the auth screens their contrast. Defined here rather
+   * than inline in the component so a future accent change reaches them —
+   * these were previously hard-coded oklch literals in (auth)/layout.tsx and
+   * would have silently stayed teal after this change.
+   * ------------------------------------------------------------------- */
+  --brand-panel: oklch(0.185 0.016 55);
+  --brand-bloom-a: oklch(0.62 0.13 52);
+  --brand-bloom-b: oklch(0.75 0.12 88);
 }
 
 /* ---------------------------------------------------------------------------
@@ -76,25 +102,25 @@
 
     --text: oklch(0.948 0.004 85);
     --text-muted: oklch(0.722 0.007 85);
-    --text-subtle: oklch(0.578 0.008 85);
+    --text-subtle: oklch(0.635 0.008 85);
     --text-inverse: oklch(0.185 0.008 80);
 
-    --accent: oklch(0.735 0.108 190);
-    --accent-hover: oklch(0.795 0.1 190);
-    --accent-active: oklch(0.685 0.11 190);
-    --accent-fg: oklch(0.155 0.025 190);
-    --accent-subtle: oklch(0.268 0.042 190);
-    --accent-border: oklch(0.408 0.062 190);
+    --accent: oklch(0.76 0.125 60);
+    --accent-hover: oklch(0.815 0.11 62);
+    --accent-active: oklch(0.705 0.13 58);
+    --accent-fg: oklch(0.18 0.03 55);
+    --accent-subtle: oklch(0.285 0.05 55);
+    --accent-border: oklch(0.42 0.07 57);
 
     --success: oklch(0.735 0.135 155);
     --success-subtle: oklch(0.268 0.05 155);
-    --warning: oklch(0.79 0.14 75);
-    --warning-subtle: oklch(0.288 0.055 75);
-    --danger: oklch(0.688 0.165 23);
-    --danger-subtle: oklch(0.288 0.07 23);
-    --danger-border: oklch(0.438 0.11 23);
+    --warning: oklch(0.83 0.145 92);
+    --warning-subtle: oklch(0.3 0.06 92);
+    --danger: oklch(0.7 0.17 20);
+    --danger-subtle: oklch(0.295 0.075 20);
+    --danger-border: oklch(0.445 0.115 20);
 
-    --focus: oklch(0.775 0.105 190);
+    --focus: oklch(0.79 0.115 60);
 
     --shadow-color: 80 40% 2%;
   }
@@ -112,27 +138,27 @@
 
   --text: oklch(0.948 0.004 85);
   --text-muted: oklch(0.722 0.007 85);
-  --text-subtle: oklch(0.578 0.008 85);
+  --text-subtle: oklch(0.635 0.008 85);
   --text-inverse: oklch(0.185 0.008 80);
 
-  --accent: oklch(0.735 0.108 190);
-  --accent-hover: oklch(0.795 0.1 190);
-  --accent-active: oklch(0.685 0.11 190);
-  --accent-fg: oklch(0.155 0.025 190);
-  --accent-subtle: oklch(0.268 0.042 190);
-  --accent-border: oklch(0.408 0.062 190);
+  --accent: oklch(0.76 0.125 60);
+  --accent-hover: oklch(0.815 0.11 62);
+  --accent-active: oklch(0.705 0.13 58);
+  --accent-fg: oklch(0.18 0.03 55);
+  --accent-subtle: oklch(0.285 0.05 55);
+  --accent-border: oklch(0.42 0.07 57);
 
   --success: oklch(0.735 0.135 155);
   --success-subtle: oklch(0.268 0.05 155);
-  --warning: oklch(0.79 0.14 75);
-  --warning-subtle: oklch(0.288 0.055 75);
-  --danger: oklch(0.688 0.165 23);
-  --danger-subtle: oklch(0.288 0.07 23);
-  --danger-border: oklch(0.438 0.11 23);
+  --warning: oklch(0.83 0.145 92);
+  --warning-subtle: oklch(0.3 0.06 92);
+  --danger: oklch(0.7 0.17 20);
+  --danger-subtle: oklch(0.295 0.075 20);
+  --danger-border: oklch(0.445 0.115 20);
 
-  --focus: oklch(0.775 0.105 190);
+  --focus: oklch(0.79 0.115 60);
 
-  --shadow-color: 80 40% 2%;
+  --shadow-color: 55 40% 2%;
 }
 
 /* ---------------------------------------------------------------------------
@@ -171,6 +197,10 @@
   --color-danger-border: var(--danger-border);
 
   --color-focus: var(--focus);
+
+  --color-brand-panel: var(--brand-panel);
+  --color-brand-bloom-a: var(--brand-bloom-a);
+  --color-brand-bloom-b: var(--brand-bloom-b);
 
   /* Type. Serif for display gives the product an editorial, document-native
    * voice; the humanist sans handles UI; mono is reserved for identifiers
@@ -362,6 +392,37 @@
     text-wrap: balance;
   }
 
+  /* -------------------------------------------------------------------------
+   * Arabic typography
+   *
+   * IBM Plex has no Arabic serif, so display headings switch to the Arabic sans
+   * rather than falling through to a system serif that would not match the
+   * Latin face at all.
+   *
+   * letter-spacing MUST be reset. Arabic is a joining script: negative tracking
+   * pulls letterforms apart at their connection points, which does not look
+   * "tight", it looks broken. The same applies to any `tracking-*` utility used
+   * on Arabic text.
+   * ---------------------------------------------------------------------- */
+  [dir='rtl'] body {
+    font-family:
+      var(--font-plex-arabic), var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  [dir='rtl'] :is(h1, h2, h3) {
+    font-family: var(--font-plex-arabic), var(--font-plex-sans), ui-sans-serif, sans-serif;
+    letter-spacing: normal;
+  }
+
+  /* Latin fragments inside Arabic copy — brand name, email placeholders — keep
+   * the Latin face so "DocuFlow" does not render in the Arabic font's Latin
+   * subset, which is designed for harmony with Arabic rather than to stand alone. */
+  [dir='rtl'] .latin {
+    font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
   p {
     text-wrap: pretty;
   }
@@ -380,6 +441,26 @@
     -webkit-box-shadow: 0 0 0 1000px var(--color-surface-inset) inset;
     caret-color: var(--color-text);
     transition: background-color 5000s ease-in-out 0s;
+  }
+}
+
+@layer components {
+  /* Brand panel — background and foreground bound together deliberately.
+   *
+   * Previously this was `bg-brand-panel` plus separate `text-white` children.
+   * If that one background utility failed to resolve for any reason (a stale
+   * dev build was how it surfaced), the panel fell back to transparent and every
+   * white label sat on the near-white canvas — invisible. Pairing the two here
+   * means the light foreground can never outlive the dark background.
+   *
+   * The literal fallback in var() is a second belt: even with the token missing
+   * entirely, the panel still paints dark rather than transparent.
+   *
+   * Intentionally dark in BOTH themes — the contrast against the form column is
+   * what gives the auth screens their structure. */
+  .brand-panel {
+    background-color: var(--brand-panel, oklch(0.185 0.016 55));
+    color: var(--color-white, #fff);
   }
 }
 

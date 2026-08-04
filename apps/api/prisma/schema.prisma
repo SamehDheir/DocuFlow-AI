@@ -60,12 +60,14 @@ model Company {
   createdAt DateTime      @default(now()) @map("created_at")
   updatedAt DateTime      @updatedAt @map("updated_at")
 
-  users     User[]
-  roles     Role[]
-  folders   Folder[]
-  documents Document[]
-  tags      Tag[]
-  auditLogs AuditLog[]
+  users               User[]
+  roles               Role[]
+  folders             Folder[]
+  documents           Document[]
+  tags                Tag[]
+  auditLogs           AuditLog[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("companies")
 }
@@ -82,12 +84,14 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  roles            UserRole[]
-  ownedDocuments   Document[]        @relation("DocumentOwner")
-  createdFolders   Folder[]          @relation("FolderCreatedBy")
-  uploadedVersions DocumentVersion[] @relation("VersionUploadedBy")
-  auditLogs        AuditLog[]
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles               UserRole[]
+  ownedDocuments      Document[]           @relation("DocumentOwner")
+  createdFolders      Folder[]             @relation("FolderCreatedBy")
+  uploadedVersions    DocumentVersion[]    @relation("VersionUploadedBy")
+  auditLogs           AuditLog[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   /// Email is unique PER COMPANY, not globally — the same person may hold an
   /// account with two different customers, and a global unique would let one
@@ -155,6 +159,67 @@ model UserRole {
   @@id([userId, roleId])
   @@index([roleId])
   @@map("user_roles")
+}
+
+// -----------------------------------------------------------------------------
+// Sessions and credentials
+// -----------------------------------------------------------------------------
+
+/// Server-side half of a refresh token.
+///
+/// A stateless refresh JWT cannot be revoked: logout would be cosmetic, and a
+/// stolen token would stay valid for its full lifetime. Persisting a row per
+/// token makes revocation real.
+///
+/// Only a digest of the token is stored, so a database leak yields no usable
+/// tokens — the same reason passwords are hashed. It is HMAC-SHA256 keyed with
+/// JWT_REFRESH_SECRET rather than bcrypt: the token is 256 bits of CSPRNG
+/// output so there is no dictionary to attack, lookup happens by digest on
+/// every refresh and must stay a single indexed read, and keying it means a
+/// stolen database alone cannot be used to recognise tokens.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  /// Rotation lineage: every token minted from the same login shares this id.
+  /// If an already-rotated token is presented again, the token was replayed —
+  /// either by an attacker or by the legitimate holder after theft — and the
+  /// entire family is revoked rather than just the one row.
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  /// Captured so a future "active sessions" screen can describe each device.
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId])
+  @@index([familyId])
+  /// Supports the sweep that deletes expired rows.
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Single-use password reset grant. Hashed for the same reason as RefreshToken.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // -----------------------------------------------------------------------------

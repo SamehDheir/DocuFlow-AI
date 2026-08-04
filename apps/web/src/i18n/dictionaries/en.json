@@ -1,0 +1,158 @@
+{
+  "common": {
+    "brand": "DocuFlow",
+    "backToSignIn": "Back to sign in",
+    "language": "Language",
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "loading": "Loading",
+    "genericError": "Something went wrong. Please try again."
+  },
+  "panel": {
+    "headline": "Every file accounted for.",
+    "subhead": "Upload once. DocuFlow handles the rest — extraction, indexing, and a complete audit trail of who touched what.",
+    "isolated": "Isolated per company",
+    "versioned": "Full version history",
+    "stages": {
+      "uploaded": { "label": "Uploaded", "detail": "Stored in encrypted object storage" },
+      "processing": { "label": "Processing", "detail": "Thumbnails and metadata extracted" },
+      "ocr": { "label": "OCR", "detail": "Text recovered from scans and images" },
+      "ai": { "label": "AI analysis", "detail": "Summarised, classified, indexed" },
+      "ready": { "label": "Ready", "detail": "Searchable across your workspace" }
+    }
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Access your workspace and pick up where you left off.",
+    "email": "Work email",
+    "emailPlaceholder": "you@company.com",
+    "password": "Password",
+    "forgot": "Forgot password?",
+    "submit": "Sign in",
+    "submitting": "Signing in",
+    "noAccount": "Don't have a workspace?",
+    "createOne": "Create one",
+    "errors": {
+      "emailRequired": "Enter your work email.",
+      "emailInvalid": "That doesn't look like a valid email address.",
+      "passwordRequired": "Enter your password."
+    },
+    "meta": {
+      "title": "Sign in",
+      "description": "Sign in to your DocuFlow AI workspace."
+    }
+  },
+  "register": {
+    "step": "Step {current} of {total}",
+    "titleCompany": "Create your workspace",
+    "titleAccount": "Your admin account",
+    "subtitleCompany": "Every company gets an isolated workspace. Nothing is shared between them.",
+    "subtitleAccount": "You will be the first administrator, able to invite the rest of your team.",
+    "companyName": "Company name",
+    "companyPlaceholder": "Acme Corporation",
+    "companyHint": "This becomes your workspace name. You can change it later.",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "email": "Work email",
+    "emailPlaceholder": "you@company.com",
+    "password": "Password",
+    "passwordPlaceholder": "At least 12 characters",
+    "continue": "Continue",
+    "back": "Back",
+    "submit": "Create workspace",
+    "submitting": "Creating workspace",
+    "haveAccount": "Already have a workspace?",
+    "signIn": "Sign in",
+    "strength": {
+      "label": "Password strength",
+      "levels": ["Too short", "Weak", "Fair", "Strong", "Excellent"]
+    },
+    "errors": {
+      "companyRequired": "Enter your company name.",
+      "companyShort": "That looks too short to be a company name.",
+      "required": "Required.",
+      "emailRequired": "Enter your work email.",
+      "emailInvalid": "That doesn't look like a valid email address.",
+      "passwordRequired": "Choose a password.",
+      "passwordShort": "Use at least 12 characters.",
+      "passwordWeak": "Add numbers, symbols, or mixed case."
+    },
+    "meta": {
+      "title": "Create your workspace",
+      "description": "Set up a DocuFlow AI workspace for your company."
+    }
+  },
+  "forgot": {
+    "title": "Reset your password",
+    "subtitle": "Enter the email address you use for DocuFlow and we'll send you a reset link.",
+    "email": "Work email",
+    "emailPlaceholder": "you@company.com",
+    "submit": "Send reset link",
+    "submitting": "Sending",
+    "remembered": "Remembered it?",
+    "sentTitle": "Check your inbox",
+    "sentBody": "If an account exists for {email}, a reset link is on its way. The link expires in 30 minutes.",
+    "sentNote": "We show this message whether or not the address is registered — revealing which emails have accounts would let anyone test for your users.",
+    "resend": "Send again",
+    "resendIn": "You can send again in {seconds}s",
+    "errors": {
+      "emailRequired": "Enter your work email.",
+      "emailInvalid": "That doesn't look like a valid email address."
+    },
+    "meta": {
+      "title": "Reset your password",
+      "description": "Request a password reset link for your DocuFlow AI account."
+    }
+  },
+  "app": {
+    "skipToContent": "Skip to content",
+    "account": "Account",
+    "signOut": "Sign out",
+    "restoring": "Restoring your session"
+  },
+  "dashboard": {
+    "greeting": "Welcome back, {name}",
+    "subtitle": "Your workspace is set up. Here's where it stands.",
+    "workspaceLabel": "Workspace",
+    "roleLabel": "Your role",
+    "permissionsLabel": "Permissions",
+    "permissionsValue": "{count} granted",
+    "stats": {
+      "documents": "Documents",
+      "storage": "Storage used",
+      "members": "Team members"
+    },
+    "empty": {
+      "badge": "Coming next",
+      "title": "Nothing filed yet",
+      "body": "Uploads, folders, and the activity feed arrive with the documents module. Your workspace, roles, and permissions are already in place."
+    },
+    "error": {
+      "title": "Couldn't load your workspace",
+      "retry": "Try again"
+    },
+    "meta": {
+      "title": "Dashboard",
+      "description": "Your DocuFlow AI workspace."
+    }
+  },
+  "notFound": {
+    "code": "404",
+    "title": "This page has been filed elsewhere.",
+    "body": "The page you're looking for doesn't exist, or it may have been moved or archived.",
+    "signIn": "Go to sign in",
+    "home": "Back to start",
+    "meta": {
+      "title": "Page not found",
+      "description": "The page you're looking for doesn't exist."
+    }
+  },
+  "meta": {
+    "siteName": "DocuFlow AI",
+    "titleTemplate": "%s · DocuFlow AI",
+    "defaultTitle": "DocuFlow AI",
+    "description": "Enterprise document management with AI assistance — one secure repository, full version history, and answers drawn from your own files."
+  }
+}
