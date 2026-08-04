@@ -15,7 +15,7 @@
 # ------------------------------------------------------------------------------
 # Stage 1 — dependencies
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 
 # See the note in api.Dockerfile — narrow this to manifests once the workspace
@@ -45,7 +45,7 @@ RUN npm run build --workspace=@docuflow/web
 # ------------------------------------------------------------------------------
 # Stage 3 — runtime
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
