@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="DocuFlow">
+  <!--
+    DocuFlow site icon.
+
+    Drawn for this project rather than taken from an icon set, and simplified
+    from the in-app LogoMark for small sizes: at 16px the two-sheet stack and
+    hairline strokes of the full mark turn to mud, so this keeps one sheet,
+    solid fills and 2.1u strokes.
+
+    Meaning: a document (sheet + folded corner) whose lines shorten downward —
+    content moving through a pipeline rather than sitting still, which is the
+    product in one glyph.
+
+    Copper field rather than a transparent background so the icon holds its
+    shape against both light and dark browser chrome, and against the grey of a
+    bookmarks bar. Favicons cannot respond to prefers-color-scheme reliably,
+    so one confident field beats a theme-aware compromise.
+  -->
+  <rect width="32" height="32" rx="7.4" fill="#9C5313" />
+  <path
+    d="M9.2 5.5h7.6l6.7 6.7v13.3a2 2 0 0 1-2 2H9.2a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2Z"
+    fill="#FDF8F3"
+  />
+  <!-- Folded corner, a shade darker so the fold reads as depth, not a gap -->
+  <path d="M16.8 5.5l6.7 6.7h-4.7a2 2 0 0 1-2-2V5.5Z" fill="#E9CBAB" />
+  <!-- Flow: lines shorten as they descend -->
+  <path
+    d="M10.9 16.5h9.4M10.9 20.1h6.9M10.9 23.7h4.2"
+    stroke="#9C5313"
+    stroke-width="2.1"
+    stroke-linecap="round"
+  />
+</svg>
