@@ -1,7 +1,8 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
@@ -28,6 +29,24 @@ export interface RowAction {
 }
 
 /**
+ * Menu width, in pixels, matching `w-44` below.
+ *
+ * Pinned in both places because the open position is computed in JS before the
+ * menu has been laid out — an auto width cannot be aligned to the trigger's
+ * inline-end edge without measuring first.
+ */
+const MENU_WIDTH = 176;
+/** Space between the trigger and the menu, matching the old `0.25rem` offset. */
+const MENU_GAP = 4;
+/** Keeps the menu off the viewport edge when a row sits near the window edge. */
+const VIEWPORT_MARGIN = 8;
+
+interface Coords {
+  top: number;
+  left: number;
+}
+
+/**
  * One document in the list.
  *
  * Actions sit behind a menu rather than as inline buttons. At 10,000 rows four
@@ -51,27 +70,104 @@ export function DocumentRow({
   onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<Coords | null>(null);
   const reduced = useReducedMotion();
   const container = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
+
+  /**
+   * Anchors the menu to the trigger in viewport coordinates.
+   *
+   * The menu is rendered through a portal, so this is the only thing tying it
+   * to its row — see the note on the portal below for why it cannot simply be
+   * positioned by CSS.
+   */
+  const place = useCallback(() => {
+    const button = trigger.current;
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    // Read the resolved direction rather than the locale: the menu must follow
+    // whatever `dir` the document actually settled on.
+    const rtl = getComputedStyle(button).direction === 'rtl';
+
+    // Aligned on the inline-end edge, then pulled back inside the viewport for
+    // a row whose trigger sits close to the window edge.
+    const preferred = rtl ? rect.left : rect.right - MENU_WIDTH;
+    const left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(preferred, window.innerWidth - MENU_WIDTH - VIEWPORT_MARGIN),
+    );
+
+    setCoords({ top: rect.bottom + MENU_GAP, left });
+  }, []);
+
+  /**
+   * Flips the menu above its trigger when it would otherwise run off the
+   * bottom — the case that matters for the last row of a long list.
+   *
+   * A layout effect because it measures the rendered menu and corrects the
+   * position before paint; in a passive effect the reader would see it jump.
+   */
+  useLayoutEffect(() => {
+    if (!open || !coords || !menu.current || !trigger.current) return;
+
+    const height = menu.current.offsetHeight;
+    const rect = trigger.current.getBoundingClientRect();
+
+    const overflowsBelow = coords.top + height > window.innerHeight - VIEWPORT_MARGIN;
+    const fitsAbove = rect.top - height - MENU_GAP >= VIEWPORT_MARGIN;
+
+    if (overflowsBelow && fitsAbove) {
+      const flipped = rect.top - height - MENU_GAP;
+      // Guarded, or the correction re-triggers this effect forever.
+      if (Math.abs(flipped - coords.top) > 1) setCoords({ top: flipped, left: coords.left });
+    }
+  }, [open, coords]);
 
   useEffect(() => {
     if (!open) return;
 
+    /**
+     * The menu is not a DOM descendant of the row, so a containment test
+     * against the row alone would read a click on a menu item as an outside
+     * click — closing the menu on mousedown and destroying the button before
+     * its click could fire, which would make every action silently dead.
+     */
     const onPointerDown = (event: MouseEvent) => {
-      if (!container.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+
+      if (!container.current?.contains(target) && !menu.current?.contains(target)) {
+        setOpen(false);
+      }
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+      }
     };
+
+    /**
+     * Closed rather than re-anchored on scroll. Fixed coordinates go stale the
+     * moment anything moves, and a menu that drifts away from its row is worse
+     * than one that dismisses. Captured, so a scroll in any container counts.
+     */
+    const dismiss = () => setOpen(false);
 
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('resize', dismiss);
 
     return () => {
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismiss);
     };
   }, [open]);
 
@@ -116,10 +212,21 @@ export function DocumentRow({
         {modified}
       </span>
 
-      <div className="relative shrink-0">
+      <div className="shrink-0">
         <button
+          ref={trigger}
           type="button"
-          onClick={() => setOpen((current) => !current)}
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+
+            // Anchored before the menu exists, so it renders in place rather
+            // than at the origin for a frame.
+            place();
+            setOpen(true);
+          }}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={open ? menuId : undefined}
@@ -133,35 +240,50 @@ export function DocumentRow({
           </svg>
         </button>
 
-        {open ? (
-          <motion.div
-            id={menuId}
-            role="menu"
-            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: DURATION.fast, ease: EASE.outExpo }}
-            className="border-border bg-surface-raised inset-e-0 absolute top-[calc(100%+0.25rem)] z-40 min-w-40 origin-top overflow-hidden rounded-lg border py-1 shadow-lg"
-          >
-            {actions.map((action) => (
-              <button
-                key={action.key}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  action.onSelect();
-                }}
-                className={
-                  action.tone === 'danger'
-                    ? 'text-danger hover:bg-danger-subtle block w-full px-3 py-2 text-start text-sm transition-colors'
-                    : 'hover:bg-surface-inset block w-full px-3 py-2 text-start text-sm transition-colors'
-                }
+        {/*
+          Rendered into document.body rather than beside the trigger.
+
+          The list container clips its rows with `overflow-hidden` so their
+          hover background follows its rounded corners, and an absolutely
+          positioned menu inside that subtree is clipped along with them — the
+          menu appeared trapped inside the row. Ancestor `motion.div`s animate
+          `y`, so their transforms would also capture a `position: fixed`
+          child. A portal escapes both at once.
+        */}
+        {open && coords
+          ? createPortal(
+              <motion.div
+                ref={menu}
+                id={menuId}
+                role="menu"
+                initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: -4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: DURATION.fast, ease: EASE.outExpo }}
+                style={{ top: coords.top, left: coords.left, width: MENU_WIDTH }}
+                className="border-border bg-surface-raised fixed z-50 origin-top overflow-hidden rounded-lg border py-1 shadow-lg"
               >
-                {action.label}
-              </button>
-            ))}
-          </motion.div>
-        ) : null}
+                {actions.map((action) => (
+                  <button
+                    key={action.key}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setOpen(false);
+                      action.onSelect();
+                    }}
+                    className={
+                      action.tone === 'danger'
+                        ? 'text-danger hover:bg-danger-subtle block w-full px-3 py-2 text-start text-sm transition-colors'
+                        : 'hover:bg-surface-inset block w-full px-3 py-2 text-start text-sm transition-colors'
+                    }
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </motion.div>,
+              document.body,
+            )
+          : null}
       </div>
     </div>
   );

@@ -49,7 +49,13 @@ const envSchema = z.object({
       'application/pdf,image/png,image/jpeg,image/tiff,application/msword,' +
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document,' +
         'application/vnd.ms-excel,' +
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,' +
+        // PowerPoint, .ppt and .pptx. Word and Excel were both here from the
+        // start and presentations were simply missed — an office suite minus
+        // one third of it.
+        'application/vnd.ms-powerpoint,' +
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation,' +
+        'text/plain',
     )
     .transform((value) =>
       value

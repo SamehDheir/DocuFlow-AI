@@ -109,8 +109,26 @@ export function UploadQueue({
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }, []);
 
+  /**
+   * Batches already sent, tracked by array identity.
+   *
+   * The effect below POSTs, which makes it the one kind of effect that must be
+   * idempotent. React StrictMode deliberately runs setup → cleanup → setup on
+   * mount in development, and this effect has no cleanup that could unsend an
+   * upload — so without this guard every file was uploaded twice and appeared
+   * twice in the queue.
+   *
+   * Keyed on the array itself, which matches the `files` contract ("a new array
+   * identity starts a new batch") and lets finished batches be collected. Refs
+   * survive StrictMode's simulated remount, which is precisely why the guard
+   * belongs in one rather than in state.
+   */
+  const sent = useRef(new WeakSet<File[]>());
+
   useEffect(() => {
-    if (files.length === 0) return;
+    if (files.length === 0 || sent.current.has(files)) return;
+
+    sent.current.add(files);
 
     const started = files.map((file) => ({
       id: (nextId.current += 1),

@@ -2,7 +2,9 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/cn';
+import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
+import { interpolate } from '@/i18n/interpolate';
 import type { Folder } from '@/lib/documents';
 
 interface TreeNode extends Folder {
@@ -59,15 +61,21 @@ export function FolderTree({
   folders,
   selectedId,
   onSelect,
+  locale,
   t,
 }: {
   folders: Folder[];
   /** undefined means "all files"; a string selects that folder. */
   selectedId?: string;
   onSelect: (folderId?: string) => void;
+  locale: Locale;
   t: Dictionary['documents'];
 }) {
   const rows = useMemo(() => flatten(toTree(folders)), [folders]);
+
+  // Arabic renders its own digits, so the count goes through Intl rather than
+  // being interpolated as a bare JS number.
+  const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   return (
     <nav aria-label={t.folders} className="flex flex-col gap-0.5">
@@ -98,14 +106,36 @@ export function FolderTree({
            */
           style={{ paddingInlineStart: `${0.75 + Math.min(node.depth, 4) * 0.75}rem` }}
           className={cn(
-            'truncate rounded-md py-1.5 pe-3 text-start text-sm transition-colors',
+            'flex items-center gap-2 rounded-md py-1.5 pe-3 text-start text-sm transition-colors',
             selectedId === node.id
               ? 'bg-accent-subtle text-accent font-medium'
               : 'text-text-muted hover:bg-surface-inset hover:text-text',
           )}
           title={node.name}
         >
-          {node.name}
+          <span className="truncate">{node.name}</span>
+
+          {/*
+            The digits are decorative here — the sr-only phrase beside them
+            says what they count, so the button reads as "Contracts, 12
+            documents" rather than "Contracts 12". Tabular figures keep the
+            column steady as the tree scrolls.
+          */}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'ms-auto shrink-0 text-xs tabular-nums',
+              selectedId === node.id ? 'text-accent/70' : 'text-text-subtle',
+            )}
+          >
+            {number.format(node.documentCount)}
+          </span>
+
+          <span className="sr-only">
+            {node.documentCount === 1
+              ? t.countOne
+              : interpolate(t.countMany, { count: number.format(node.documentCount) })}
+          </span>
         </button>
       ))}
     </nav>

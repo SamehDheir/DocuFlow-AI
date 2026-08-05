@@ -150,9 +150,23 @@ export default async function RootLayout({
       data-scroll-behavior="smooth"
       className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable} ${plexArabic.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
-      </head>
+      {/*
+        A raw <script>, hoisted into <head> by React 19 rather than wrapped in a
+        hand-written <head> element.
+
+        It must execute during HTML parse, before the first paint, or every cold
+        load flashes light before switching to dark. That rules out
+        next/script: for an inline script even `beforeInteractive` defers to
+        Next's own loader queue (`__next_s`) in <body>, which runs after paint
+        and puts the flash right back.
+
+        React logs "Scripts inside React components are never executed when
+        rendering on the client" in development. That is accurate and harmless
+        here — this script's whole job is done by the server-rendered HTML on
+        first load, and a client navigation has no theme to re-apply.
+      */}
+      <script id="docuflow-theme-boot" dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+
       {/* Extensions such as Grammarly and password managers inject attributes
           onto <body> before React hydrates, which React reports as a mismatch
           against markup that is in fact identical. suppressHydrationWarning does

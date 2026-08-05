@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
+import { DocumentPreview } from '@/components/documents/document-preview';
 import { DocumentRow, type RowAction } from '@/components/documents/document-row';
 import { DropZone } from '@/components/documents/drop-zone';
 import { FolderTree } from '@/components/documents/folder-tree';
@@ -70,6 +71,7 @@ export function DocumentsView({
   const [folderName, setFolderName] = useState('');
   const [folderError, setFolderError] = useState<string | undefined>();
   const [confirming, setConfirming] = useState<DocumentSummary | null>(null);
+  const [previewing, setPreviewing] = useState<DocumentSummary | null>(null);
 
   const filePicker = useRef<HTMLInputElement>(null);
 
@@ -199,6 +201,9 @@ export function DocumentsView({
   };
 
   const actionsFor = (item: DocumentSummary): RowAction[] => [
+    // Offered for every document. The dialog itself explains the types it
+    // cannot render, which is steadier than an action that comes and goes.
+    { key: 'preview', label: t.actions.open, onSelect: () => setPreviewing(item) },
     { key: 'download', label: t.actions.download, onSelect: () => void download(item) },
     {
       key: 'delete',
@@ -228,7 +233,7 @@ export function DocumentsView({
 
         <motion.div
           variants={respectMotion(riseItem, reduced)}
-          className="flex flex-wrap items-center gap-3"
+          className="flex flex-wrap items-end gap-3"
         >
           <div className="min-w-52 flex-1">
             <TextField
@@ -275,7 +280,13 @@ export function DocumentsView({
           className="grid gap-6 lg:grid-cols-[13rem_1fr]"
         >
           <aside className="hidden lg:block">
-            <FolderTree folders={folders} selectedId={folderId} onSelect={setFolderId} t={t} />
+            <FolderTree
+              folders={folders}
+              selectedId={folderId}
+              onSelect={setFolderId}
+              locale={lang}
+              t={t}
+            />
           </aside>
 
           <section className="min-w-0">
@@ -340,6 +351,9 @@ export function DocumentsView({
                         locale={lang}
                         t={t}
                         actions={actionsFor(item)}
+                        // Clicking the name is the quickest path to a look at
+                        // the file.
+                        onOpen={() => setPreviewing(item)}
                       />
                     ))}
                   </div>
@@ -368,6 +382,18 @@ export function DocumentsView({
           </section>
         </motion.div>
       </motion.div>
+
+      <DocumentPreview
+        // A fresh instance per document, so the previous file's blob is
+        // released and the new one starts from its loading state.
+        key={previewing?.id ?? 'none'}
+        item={previewing}
+        onClose={() => setPreviewing(null)}
+        t={t}
+        errors={errors}
+        common={common}
+        onDownload={(item) => void download(item)}
+      />
 
       <Dialog
         open={creatingFolder}

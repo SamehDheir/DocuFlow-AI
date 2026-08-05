@@ -39,6 +39,17 @@ const UPLOAD_TEMP_DIR = join(tmpdir(), 'docuflow-uploads');
         mkdirSync(UPLOAD_TEMP_DIR, { recursive: true });
 
         return {
+          /**
+           * Multipart field values — the filename above all — are UTF-8.
+           *
+           * multer defaults this to `latin1` and hands it straight to busboy,
+           * so an Arabic filename arrives decoded byte-for-byte as Western
+           * European text: `تقرير.pdf` becomes `ØªÙ‚Ø±ÙŠØ±.pdf`, and that
+           * mojibake is what gets persisted as `originalName` and echoed back
+           * in Content-Disposition on download. The product ships in Arabic, so
+           * the default is simply wrong here.
+           */
+          defParamCharset: 'utf8',
           storage: diskStorage({
             destination: UPLOAD_TEMP_DIR,
             /**

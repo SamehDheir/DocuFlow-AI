@@ -1,6 +1,14 @@
 import { API_URL, ApiError, apiGet, apiSend, query } from './api';
 
 /**
+ * Upload ceiling, mirroring the API's MAX_FILE_SIZE.
+ *
+ * Falls back to the same 100 MB the server defaults to, so a missing env var
+ * cannot silently raise the client's limit above the server's.
+ */
+export const MAX_FILE_SIZE = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE ?? 104857600);
+
+/**
  * Documents and folders client.
  *
  * Every call takes an access token explicitly and is meant to be wrapped in
@@ -50,6 +58,12 @@ export interface Folder {
   createdAt: string;
   updatedAt: string;
   createdById: string;
+  /**
+   * Files filed directly in this folder, excluding trashed ones and excluding
+   * subfolders' contents — so it always matches what selecting the folder
+   * lists.
+   */
+  documentCount: number;
 }
 
 export interface FolderDetail {
@@ -173,7 +187,30 @@ export async function fetchDocumentBlob(
     throw new ApiError('That file could not be downloaded.', undefined, response.status);
   }
 
-  return URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+
+  /**
+   * An inline preview is re-typed from OUR allowlist, never from the response.
+   *
+   * A blob: URL renders according to the blob's MIME type, and the response's
+   * type traces back to `documents.mime_type`, which the uploading client
+   * supplied. Left alone, a file that is really HTML but was declared as
+   * application/pdf would be rendered as HTML inside our own origin by the
+   * preview iframe — script execution against a real session.
+   *
+   * Re-wrapping with a type this module chose makes that impossible: HTML bytes
+   * labelled application/pdf reach the PDF viewer and simply fail to parse.
+   * Downloads skip this — they are never rendered, and the original type is
+   * what the file should be saved as.
+   */
+  if (inline) {
+    const declared = blob.type.toLowerCase();
+    const safe = PREVIEWABLE.has(declared) ? declared : 'application/octet-stream';
+
+    return URL.createObjectURL(new Blob([blob], { type: safe }));
+  }
+
+  return URL.createObjectURL(blob);
 }
 
 export interface UploadHandle {
@@ -199,6 +236,33 @@ export function uploadDocument(
   const request = new XMLHttpRequest();
 
   const done = new Promise<DocumentSummary>((resolve, reject) => {
+    /**
+     * Size is checked HERE, before a single byte goes out.
+     *
+     * The server also enforces it, and must — but it can only do so by aborting
+     * a transfer already in flight, and a browser meeting that abort reports
+     * `net::ERR_CONNECTION_RESET` instead of the 413 the API actually sent. The
+     * reader is told the server hung up, not that their file is too big. So the
+     * limit is mirrored to the client purely so the common case fails in
+     * language, instantly, without pushing 100 MB up the wire first.
+     *
+     * The MIME allowlist is deliberately NOT mirrored: an unaccepted type is
+     * rejected only after the body has been read, so that 400 arrives intact
+     * and renders correctly already. Duplicating the list here would buy
+     * nothing and drift from the server's copy.
+     */
+    if (file.size > MAX_FILE_SIZE) {
+      reject(
+        new ApiError(
+          'That file is larger than the upload limit.',
+          undefined,
+          413,
+          'FILE_TOO_LARGE',
+        ),
+      );
+      return;
+    }
+
     const form = new FormData();
     form.append('file', file);
 
@@ -256,6 +320,20 @@ function parseXhrError(request: XMLHttpRequest): ApiError {
   } catch {
     return new ApiError('That file could not be uploaded.', undefined, request.status);
   }
+}
+
+/**
+ * Types the API will stream inline, mirroring INLINE_PREVIEWABLE in
+ * documents.service.ts.
+ *
+ * Mirrored so the UI can hide the preview action for a .docx rather than
+ * offering one that always fails — the server stays authoritative and still
+ * returns PREVIEW_NOT_AVAILABLE if this list ever drifts ahead of it.
+ */
+const PREVIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif']);
+
+export function isPreviewable(mimeType: string): boolean {
+  return PREVIEWABLE.has(mimeType.toLowerCase());
 }
 
 /** Human-readable size, from the string the API returns. */

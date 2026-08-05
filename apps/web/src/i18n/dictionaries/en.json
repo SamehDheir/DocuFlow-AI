@@ -244,6 +244,10 @@
     "meta": {
       "title": "Documents",
       "description": "Browse and manage your documents."
+    },
+    "preview": {
+      "close": "Close",
+      "loading": "Loading preview…"
     }
   },
   "upload": {
@@ -306,5 +310,64 @@
     "titleTemplate": "%s · DocuFlow AI",
     "defaultTitle": "DocuFlow AI",
     "description": "Enterprise document management with AI assistance — one secure repository, full version history, and answers drawn from your own files."
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "Every change made in this workspace, newest first.",
+    "viewAll": "View all",
+    "loadMore": "Load more",
+    "loading": "Loading activity",
+    "system": "System",
+    "filters": {
+      "action": "Action",
+      "allActions": "All actions",
+      "entity": "Type",
+      "allEntities": "All types",
+      "clear": "Clear filters"
+    },
+    "entities": {
+      "Document": "Documents",
+      "Folder": "Folders",
+      "User": "People",
+      "Company": "Workspace",
+      "RefreshToken": "Sessions"
+    },
+    "empty": {
+      "title": "Nothing has happened yet",
+      "body": "Uploads, renames and deletions all appear here as soon as they happen."
+    },
+    "emptyFiltered": {
+      "title": "No matching activity",
+      "body": "No entries match the filters you picked."
+    },
+    "error": {
+      "title": "Couldn't load activity",
+      "retry": "Try again"
+    },
+    "meta": {
+      "title": "Activity",
+      "description": "The audit trail for your workspace."
+    },
+    "actions": {
+      "auth.register": "created the workspace",
+      "auth.login": "signed in",
+      "auth.login_failed": "failed a sign-in attempt",
+      "auth.login_blocked": "was blocked from signing in",
+      "auth.logout": "signed out",
+      "auth.password_reset_requested": "requested a password reset",
+      "auth.password_reset_completed": "reset their password",
+      "auth.refresh_reuse_detected": "had a session revoked for token reuse",
+      "document.upload": "uploaded a document",
+      "document.rename": "renamed a document",
+      "document.move": "moved a document",
+      "document.delete": "moved a document to trash",
+      "document.restore": "restored a document",
+      "document.download": "downloaded a document",
+      "document.preview": "previewed a document",
+      "folder.create": "created a folder",
+      "folder.rename": "renamed a folder",
+      "folder.move": "moved a folder",
+      "folder.delete": "deleted a folder"
+    }
   }
 }

@@ -83,6 +83,18 @@ function createDb() {
     document: {
       count: ({ where }: { where?: Record<string, unknown> }) =>
         Promise.resolve(documents.filter((row) => matches(row, where)).length),
+      /** Only the `by: ['folderId']` shape the folder list uses. */
+      groupBy: ({ where }: { where?: Record<string, unknown> }) => {
+        const tally = new Map<string | null, number>();
+
+        for (const row of documents.filter((candidate) => matches(candidate, where))) {
+          tally.set(row.folderId, (tally.get(row.folderId) ?? 0) + 1);
+        }
+
+        return Promise.resolve(
+          [...tally].map(([folderId, total]) => ({ folderId, _count: { _all: total } })),
+        );
+      },
     },
   };
 
@@ -106,6 +118,65 @@ const USER = 'user-1';
 const CONTEXT = { ipAddress: '127.0.0.1', userAgent: 'jest' };
 
 describe('FoldersService', () => {
+  describe('list', () => {
+    it('reports how many documents each folder holds', async () => {
+      const { service, documents } = setup();
+
+      const contracts = await service.create({ name: 'Contracts' }, USER, CONTEXT);
+      const invoices = await service.create({ name: 'Invoices' }, USER, CONTEXT);
+
+      documents.push(
+        { id: 'a', folderId: contracts.id, deletedAt: null },
+        { id: 'b', folderId: contracts.id, deletedAt: null },
+        { id: 'c', folderId: invoices.id, deletedAt: null },
+      );
+
+      const listed = await service.list();
+
+      expect(listed.find((row) => row.id === contracts.id)?.documentCount).toBe(2);
+      expect(listed.find((row) => row.id === invoices.id)?.documentCount).toBe(1);
+    });
+
+    it('reports zero for an empty folder rather than omitting it', async () => {
+      const { service } = setup();
+      const empty = await service.create({ name: 'Empty' }, USER, CONTEXT);
+
+      const listed = await service.list();
+
+      expect(listed.find((row) => row.id === empty.id)?.documentCount).toBe(0);
+    });
+
+    it('does not count trashed documents', async () => {
+      // deletedAt is NOT handled by the tenant guard, so a missed filter here
+      // would keep counting files the user believes they deleted.
+      const { service, documents } = setup();
+      const folder = await service.create({ name: 'Contracts' }, USER, CONTEXT);
+
+      documents.push(
+        { id: 'a', folderId: folder.id, deletedAt: null },
+        { id: 'b', folderId: folder.id, deletedAt: new Date() },
+      );
+
+      const listed = await service.list();
+
+      expect(listed.find((row) => row.id === folder.id)?.documentCount).toBe(1);
+    });
+
+    it('counts only direct children, not a subtree', async () => {
+      // The number beside a folder has to match what selecting it lists.
+      const { service, documents } = setup();
+      const parent = await service.create({ name: 'Legal' }, USER, CONTEXT);
+      const child = await service.create({ name: 'Contracts', parentId: parent.id }, USER, CONTEXT);
+
+      documents.push({ id: 'a', folderId: child.id, deletedAt: null });
+
+      const listed = await service.list();
+
+      expect(listed.find((row) => row.id === parent.id)?.documentCount).toBe(0);
+      expect(listed.find((row) => row.id === child.id)?.documentCount).toBe(1);
+    });
+  });
+
   describe('create', () => {
     it('records an audit row', async () => {
       const { service, audit } = setup();

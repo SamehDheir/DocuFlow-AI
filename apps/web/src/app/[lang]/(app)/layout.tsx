@@ -33,6 +33,7 @@ export default async function AppLayout({
           dashboard: dict.dashboard.meta.title,
           documents: dict.documents.title,
           trash: dict.trash.title,
+          activity: dict.activity.title,
         }}
       >
         {children}
