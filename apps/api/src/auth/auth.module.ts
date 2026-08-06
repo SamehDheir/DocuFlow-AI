@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AuditModule } from '../common/audit/audit.module';
+import { InvitationsModule } from '../invitations/invitations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -14,7 +15,7 @@ import { TokenService } from './token.service';
   // Secrets are passed per call in TokenService and JwtMiddleware — the access
   // and refresh halves use different ones, so a module-level default would only
   // be right half the time.
-  imports: [JwtModule.register({}), PermissionsModule, AuditModule],
+  imports: [JwtModule.register({}), PermissionsModule, AuditModule, InvitationsModule],
   controllers: [AuthController],
   providers: [
     AuthService,

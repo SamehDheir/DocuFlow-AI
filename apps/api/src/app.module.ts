@@ -18,6 +18,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
 import { SearchModule } from './search/search.module';
 import { StorageModule } from './storage/storage.module';
+import { InvitationsModule } from './invitations/invitations.module';
+import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -52,6 +54,8 @@ import { UsersModule } from './users/users.module';
     ApprovalsModule,
     AuditQueryModule,
     UsersModule,
+    RolesModule,
+    InvitationsModule,
   ],
   providers: [
     /**
