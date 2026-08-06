@@ -6,11 +6,16 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { AiModule } from '../ai/ai.module';
 import { AuditModule } from '../common/audit/audit.module';
 import type { Env } from '../config/env.validation';
 import { StorageModule } from '../storage/storage.module';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
+import { PdfRasterService } from './extraction/pdf-raster.service';
+import { TextExtractorService } from './extraction/text-extractor.service';
+import { DocumentProcessingService } from './processing/document-processing.service';
+import { DocumentProcessingWorker } from './processing/document-processing.worker';
 
 /**
  * Where uploads land before they are streamed to MinIO.
@@ -22,6 +27,7 @@ const UPLOAD_TEMP_DIR = join(tmpdir(), 'docuflow-uploads');
 
 @Module({
   imports: [
+    AiModule,
     AuditModule,
     StorageModule,
     /**
@@ -65,7 +71,19 @@ const UPLOAD_TEMP_DIR = join(tmpdir(), 'docuflow-uploads');
     }),
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService],
+  /**
+   * The processing worker lives here rather than in QueueModule: it needs the
+   * pipeline below, and QueueModule is already imported for the producer, so
+   * pairing them there would be a dependency cycle. QueueModule is @Global, so
+   * QUEUE_CONNECTION and the producer resolve without an explicit import.
+   */
+  providers: [
+    DocumentsService,
+    PdfRasterService,
+    TextExtractorService,
+    DocumentProcessingService,
+    DocumentProcessingWorker,
+  ],
   exports: [DocumentsService],
 })
 export class DocumentsModule {}

@@ -32,6 +32,29 @@ export const ERROR_CODES = {
   // Storage
   STORAGE_UNAVAILABLE: 'STORAGE_UNAVAILABLE',
 
+  // Processing — OCR and AI analysis
+  /** Reprocess was asked for on a document already in the queue. */
+  DOCUMENT_ALREADY_PROCESSING: 'DOCUMENT_ALREADY_PROCESSING',
+  /** The queue is unreachable, so the work cannot be accepted rather than silently dropped. */
+  PROCESSING_UNAVAILABLE: 'PROCESSING_UNAVAILABLE',
+
+  // Search
+  SEARCH_QUERY_REQUIRED: 'SEARCH_QUERY_REQUIRED',
+
+  // Notifications
+  NOTIFICATION_NOT_FOUND: 'NOTIFICATION_NOT_FOUND',
+
+  // Approvals
+  APPROVAL_NOT_FOUND: 'APPROVAL_NOT_FOUND',
+  /** One open request per document — enforced by a partial unique index. */
+  APPROVAL_ALREADY_PENDING: 'APPROVAL_ALREADY_PENDING',
+  /** Approving, rejecting or cancelling something already decided. */
+  APPROVAL_ALREADY_DECIDED: 'APPROVAL_ALREADY_DECIDED',
+  /** Deciding your own request. */
+  APPROVAL_SELF_DECISION: 'APPROVAL_SELF_DECISION',
+  /** The request names a different assignee. */
+  APPROVAL_NOT_ASSIGNEE: 'APPROVAL_NOT_ASSIGNEE',
+
   // Generic fallbacks, used by the Prisma filter when nothing more specific fits
   CONFLICT: 'CONFLICT',
   NOT_FOUND: 'NOT_FOUND',

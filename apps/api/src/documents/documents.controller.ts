@@ -116,6 +116,24 @@ export class DocumentsController {
   }
 
   /**
+   * Re-runs OCR and AI analysis.
+   *
+   * Gated on `documents.update` rather than a new permission: it changes the
+   * document's derived data and nothing else, which is the same authority
+   * renaming or re-filing it already requires. It is also how documents
+   * uploaded before v2 get their text extracted.
+   */
+  @Post(':id/reprocess')
+  @RequirePermissions('documents.update')
+  reprocess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.documents.reprocess(id, user.sub, user.companyId, contextOf(request));
+  }
+
+  /**
    * Streams stored bytes straight through the API.
    *
    * Deliberately not a presigned MinIO URL. SECURITY.md names a presigned URL

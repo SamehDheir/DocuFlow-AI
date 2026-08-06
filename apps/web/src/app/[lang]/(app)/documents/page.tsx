@@ -37,6 +37,7 @@ export default async function DocumentsPage({ params }: { params: Promise<{ lang
       tUpload={dict.upload}
       tFolders={dict.folders}
       tConfirm={dict.confirm}
+      tApprovals={dict.approvals}
       errors={dict.errors}
       common={dict.common}
     />

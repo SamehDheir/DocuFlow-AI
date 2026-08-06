@@ -9,6 +9,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentStatus, type Prisma } from '@prisma/client';
@@ -18,6 +19,7 @@ import type { RequestContext } from '../common/http/request-context';
 import type { Env } from '../config/env.validation';
 import { TENANT_PRISMA } from '../prisma/prisma.module';
 import { tenantCreate, type TenantGuardedClient } from '../prisma/tenant-guard';
+import { DocumentProcessingProducer } from '../queue/document-processing.producer';
 import { StorageService } from '../storage/storage.service';
 import { buildStorageKey, extensionOf } from '../storage/storage-key';
 import { DEFAULT_PAGE_SIZE, type ListDocumentsDto } from './dto/list-documents.dto';
@@ -38,7 +40,37 @@ import type { UploadDocumentDto } from './dto/upload-document.dto';
 const ACTIVE = { deletedAt: null } as const;
 
 /** Types safe to render inline. Everything else downloads as an attachment. */
-const INLINE_PREVIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif']);
+/**
+ * Types streamed inline for the preview pane.
+ *
+ * `text/plain` is here because the response is already hardened for exactly
+ * this case: `X-Content-Type-Options: nosniff` stops a text file being
+ * re-interpreted as HTML, and `Content-Security-Policy: sandbox; default-src
+ * 'none'` neuters anything that survives. The web additionally re-wraps the
+ * blob with a type from its own allowlist rather than trusting the response.
+ *
+ * Office formats are deliberately NOT here — a browser cannot render them, so
+ * streaming the bytes would just download them. The UI previews those from
+ * `DocumentMetadata.extractedText` instead, which v2 fills in for every one.
+ */
+const INLINE_PREVIEWABLE = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'text/plain',
+]);
+
+/**
+ * Statuses that mean a worker is, or is about to be, writing to this document.
+ * Re-queueing one of these would let two runs interleave on the same metadata row.
+ */
+const IN_FLIGHT: ReadonlySet<DocumentStatus> = new Set([
+  DocumentStatus.PROCESSING,
+  DocumentStatus.OCR,
+  DocumentStatus.AI_ANALYSIS,
+]);
 
 const DOCUMENT_SUMMARY = {
   id: true,
@@ -57,6 +89,19 @@ const DOCUMENT_SUMMARY = {
 } satisfies Prisma.DocumentSelect;
 
 type DocumentRow = Prisma.DocumentGetPayload<{ select: typeof DOCUMENT_SUMMARY }>;
+
+/**
+ * The list projection: everything in the summary, plus just enough processing
+ * state to render a status badge per row.
+ *
+ * Only the two enums and the page count — deliberately not `extractedText` or
+ * `summary`. A page of 20 scanned contracts would otherwise ship megabytes of
+ * OCR text to draw twenty badges.
+ */
+const DOCUMENT_LIST = {
+  ...DOCUMENT_SUMMARY,
+  metadata: { select: { ocrStatus: true, aiStatus: true, ocrPages: true } },
+} satisfies Prisma.DocumentSelect;
 
 /** What multer hands over after writing the upload to a temp file. */
 export interface UploadedFile {
@@ -84,6 +129,7 @@ export class DocumentsService {
     @Inject(TENANT_PRISMA) private readonly db: TenantGuardedClient,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly processing: DocumentProcessingProducer,
     config: ConfigService<Env, true>,
   ) {
     this.maxFileSize = config.get('MAX_FILE_SIZE', { infer: true });
@@ -97,20 +143,22 @@ export class DocumentsService {
    * known before anything is committed. The order below is chosen so that no
    * failure can leave a row pointing at bytes that are not there:
    *
-   *   1. validate           — cheapest rejections first, before any write
-   *   2. row at UPLOADING   — a visible, sweepable state, not a silent orphan
+   *   1. validate             — cheapest rejections first, before any write
+   *   2. row at UPLOADING     — a visible, sweepable state, not a silent orphan
    *   3. bytes to MinIO
-   *   4. row to READY + version #1 + audit
+   *   4. row to PROCESSING + version #1 + audit
+   *   5. enqueue, AFTER the transaction commits
    *
    * A crash between 2 and 4 leaves the document at UPLOADING, which the UI can
    * show as a failed upload and an operator can reap. That is strictly better
    * than the alternative ordering, where a crash leaves an object in the bucket
    * that nothing in the database references.
    *
-   * v1 goes straight from UPLOADING to READY: there is no OCR or AI yet, so
-   * there is nothing for PROCESSING to describe. The enum keeps the states
-   * anyway, and step 4 is the seam — that is where v2 hands off to a queue and
-   * lets PROCESSING → OCR → AI_ANALYSIS run before anything reaches READY.
+   * Step 5 was the v1 seam and is now real: the request returns as soon as the
+   * bytes are safe, and PROCESSING → OCR → AI_ANALYSIS → READY runs on a queue
+   * worker. It happens strictly AFTER commit, because Redis and Postgres share
+   * no transaction — a job enqueued inside the transaction can be picked up
+   * before the row it names is visible to another connection.
    */
   async upload(
     file: UploadedFile,
@@ -155,10 +203,10 @@ export class DocumentsService {
         throw error;
       }
 
-      const ready = await this.db.$transaction(async (tx) => {
+      const stored = await this.db.$transaction(async (tx) => {
         const updated = await tx.document.update({
           where: { id: created.id },
-          data: { status: DocumentStatus.READY },
+          data: { status: DocumentStatus.PROCESSING },
           select: DOCUMENT_SUMMARY,
         });
 
@@ -201,7 +249,20 @@ export class DocumentsService {
         return updated;
       });
 
-      return toView(ready);
+      /**
+       * After commit, never inside it — see the note on the pipeline above.
+       *
+       * A refused enqueue is not an upload failure. The bytes are stored and
+       * the row is committed; the document simply sits at PROCESSING until
+       * someone reprocesses it, which is visible in the UI and recoverable.
+       */
+      await this.processing.enqueue({
+        documentId: stored.id,
+        companyId,
+        userId,
+      });
+
+      return toView(stored);
     } finally {
       // Always: the temp file is a copy of bytes now living in MinIO, and
       // leaving it behind fills the disk one upload at a time.
@@ -235,7 +296,7 @@ export class DocumentsService {
     // without a second count query.
     const rows = await this.db.document.findMany({
       where,
-      select: DOCUMENT_SUMMARY,
+      select: DOCUMENT_LIST,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
@@ -269,7 +330,27 @@ export class DocumentsService {
       where: { id },
       select: {
         ...DOCUMENT_SUMMARY,
-        metadata: { select: { title: true, description: true, language: true, keywords: true } },
+        metadata: {
+          select: {
+            title: true,
+            description: true,
+            language: true,
+            keywords: true,
+            /**
+             * The v2 payload. `extractedText` can be megabytes, so it is served
+             * only here — on the detail view someone deliberately opened — and
+             * never from the list endpoint.
+             */
+            summary: true,
+            extractedText: true,
+            ocrStatus: true,
+            ocrError: true,
+            ocrPages: true,
+            aiStatus: true,
+            aiError: true,
+            aiModel: true,
+          },
+        },
         /**
          * Versions are reached through their parent on purpose.
          *
@@ -480,6 +561,87 @@ export class DocumentsService {
     });
 
     return toView(restored);
+  }
+
+  /**
+   * Puts a document back through OCR and AI analysis.
+   *
+   * Serves three jobs at once, which is why it is one endpoint rather than
+   * three: retrying a step that failed, backfilling documents uploaded before
+   * v2 existed (their metadata sits at PENDING), and re-running analysis after
+   * the model or the prompt changes.
+   */
+  async reprocess(
+    id: string,
+    userId: string,
+    companyId: string,
+    context: RequestContext,
+  ): Promise<DocumentView> {
+    const document = await this.mustFindActive(id);
+
+    /**
+     * Refuse while it is already in flight. Not merely wasteful — two workers
+     * writing the same metadata row would interleave, and the loser's partial
+     * results would overwrite the winner's complete ones.
+     */
+    if (IN_FLIGHT.has(document.status)) {
+      throw new ConflictException(
+        apiError(
+          ERROR_CODES.DOCUMENT_ALREADY_PROCESSING,
+          'That document is already being processed',
+        ),
+      );
+    }
+
+    /**
+     * Clear the finished job first. The document id doubles as the BullMQ job
+     * id to collapse double-submits, and a retained completed job would make
+     * this add() a silent no-op.
+     */
+    await this.processing.forget(document.id);
+
+    const updated = await this.db.document.update({
+      where: { id },
+      data: {
+        status: DocumentStatus.PROCESSING,
+        metadata: {
+          upsert: {
+            // Reset both steps so the UI shows work restarting rather than the
+            // previous run's stale outcome.
+            create: { ocrStatus: 'QUEUED', aiStatus: 'PENDING' },
+            update: { ocrStatus: 'QUEUED', ocrError: null, aiStatus: 'PENDING', aiError: null },
+          },
+        },
+      },
+      select: DOCUMENT_SUMMARY,
+    });
+
+    const queued = await this.processing.enqueue({
+      documentId: id,
+      companyId,
+      userId,
+      reprocess: true,
+    });
+
+    if (!queued) {
+      throw new ServiceUnavailableException(
+        apiError(
+          ERROR_CODES.PROCESSING_UNAVAILABLE,
+          'Processing is unavailable right now. Try again shortly.',
+        ),
+      );
+    }
+
+    await this.audit.record({
+      action: 'document.reprocess.request',
+      entityType: 'Document',
+      entityId: id,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: { name: document.name },
+    });
+
+    return toView(updated);
   }
 
   private async mustFindActive(id: string): Promise<DocumentRow> {

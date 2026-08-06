@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useSession } from '@/components/auth/session-provider';
 import { Logo } from '@/components/brand/logo';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/theme-toggle';
 import type { Locale } from '@/i18n/config';
@@ -26,13 +27,22 @@ export function AppShell({
   t,
   common,
   nav,
+  notifications,
   children,
 }: {
   lang: Locale;
   t: Dictionary['app'];
   common: Dictionary['common'];
   /** Labels for the primary navigation, from the documents and trash namespaces. */
-  nav: { documents: string; trash: string; dashboard: string; activity: string };
+  nav: {
+    documents: string;
+    trash: string;
+    dashboard: string;
+    activity: string;
+    search: string;
+    approvals: string;
+  };
+  notifications: Dictionary['notifications'];
   children: React.ReactNode;
 }) {
   const { status } = useSession();
@@ -64,7 +74,13 @@ export function AppShell({
 
           <PrimaryNav lang={lang} nav={nav} />
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Only mounted once the session is real: the bell opens a stream
+                and fetches a count, neither of which is meaningful while the
+                refresh cookie is still being exchanged. */}
+            {status === 'authenticated' ? (
+              <NotificationBell lang={lang} t={notifications} common={common} />
+            ) : null}
             <LanguageSwitcher current={lang} />
             <ThemeToggle labels={{ toLight: common.switchToLight, toDark: common.switchToDark }} />
             <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
@@ -101,13 +117,27 @@ function PrimaryNav({
   nav,
 }: {
   lang: Locale;
-  nav: { documents: string; trash: string; dashboard: string; activity: string };
+  nav: {
+    documents: string;
+    trash: string;
+    dashboard: string;
+    activity: string;
+    search: string;
+    approvals: string;
+  };
 }) {
   const pathname = usePathname();
 
+  /**
+   * Search and Approvals sit next to Documents rather than at the end: both are
+   * daily work, where Trash and Activity are places you go when something has
+   * gone wrong or needs auditing.
+   */
   const links = [
     { href: `/${lang}/dashboard`, label: nav.dashboard },
     { href: `/${lang}/documents`, label: nav.documents },
+    { href: `/${lang}/search`, label: nav.search },
+    { href: `/${lang}/approvals`, label: nav.approvals },
     { href: `/${lang}/trash`, label: nav.trash },
     { href: `/${lang}/activity`, label: nav.activity },
   ];

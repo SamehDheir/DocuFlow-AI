@@ -15,7 +15,13 @@ export const MAX_FILE_SIZE = Number(process.env.NEXT_PUBLIC_MAX_FILE_SIZE ?? 104
  * `useSession().withToken(...)`, which renews once and replays on a 401.
  */
 
-/** Mirrors Prisma's DocumentStatus. v1 only ever produces UPLOADING and READY. */
+/**
+ * Mirrors Prisma's DocumentStatus.
+ *
+ * v2 makes the middle of this range real: an upload now lands at PROCESSING and
+ * walks OCR → AI_ANALYSIS → READY on a queue worker, pushed to the browser over
+ * the live event stream rather than polled for.
+ */
 export type DocumentStatus =
   | 'CREATED'
   | 'UPLOADING'
@@ -26,6 +32,34 @@ export type DocumentStatus =
   | 'READY'
   | 'ARCHIVED'
   | 'DELETED';
+
+/** Per-step outcome, tracked separately from the lifecycle. */
+export type ProcessingStage = 'PENDING' | 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED';
+
+/**
+ * The lightweight processing state carried on every list row.
+ *
+ * Deliberately excludes `extractedText` and `summary` — a page of scanned
+ * contracts would otherwise ship megabytes just to draw status badges. Those
+ * arrive only on the detail request.
+ */
+export interface ProcessingState {
+  ocrStatus: ProcessingStage;
+  aiStatus: ProcessingStage;
+  ocrPages: number | null;
+}
+
+/** True while a worker still has this document in hand. */
+export const PROCESSING_STATUSES: ReadonlySet<DocumentStatus> = new Set<DocumentStatus>([
+  'UPLOADING',
+  'PROCESSING',
+  'OCR',
+  'AI_ANALYSIS',
+]);
+
+export function isProcessing(status: DocumentStatus): boolean {
+  return PROCESSING_STATUSES.has(status);
+}
 
 export interface DocumentSummary {
   id: string;
@@ -42,10 +76,24 @@ export interface DocumentSummary {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** Absent on rows written before v2, and on the trash listing. */
+  metadata?: ProcessingState | null;
 }
 
 export interface DocumentDetail extends DocumentSummary {
-  metadata: { title: string | null; description: string | null } | null;
+  metadata:
+    | (ProcessingState & {
+        title: string | null;
+        description: string | null;
+        language: string | null;
+        keywords: string[];
+        summary: string | null;
+        extractedText: string | null;
+        ocrError: string | null;
+        aiError: string | null;
+        aiModel: string | null;
+      })
+    | null;
   owner: { id: string; firstName: string; lastName: string; email: string };
   folder: { id: string; name: string } | null;
   versions: { id: string; versionNumber: number; size: string; createdAt: string }[];
@@ -135,6 +183,17 @@ export function deleteDocument(token: string, id: string): Promise<DocumentSumma
 
 export function restoreDocument(token: string, id: string): Promise<DocumentSummary> {
   return apiSend<DocumentSummary>('POST', `/documents/${id}/restore`, token);
+}
+
+/**
+ * Re-runs text extraction and AI analysis.
+ *
+ * Also the backfill path for documents uploaded before v2, whose metadata sits
+ * at PENDING with no extracted text. Returns the document at PROCESSING; the
+ * rest arrives over the live event stream.
+ */
+export function reprocessDocument(token: string, id: string): Promise<DocumentSummary> {
+  return apiSend<DocumentSummary>('POST', `/documents/${id}/reprocess`, token);
 }
 
 export function listFolders(token: string): Promise<Folder[]> {
@@ -326,11 +385,21 @@ function parseXhrError(request: XMLHttpRequest): ApiError {
  * Types the API will stream inline, mirroring INLINE_PREVIEWABLE in
  * documents.service.ts.
  *
- * Mirrored so the UI can hide the preview action for a .docx rather than
- * offering one that always fails — the server stays authoritative and still
- * returns PREVIEW_NOT_AVAILABLE if this list ever drifts ahead of it.
+ * Mirrored so the UI never requests bytes it cannot render — the server stays
+ * authoritative and still returns PREVIEW_NOT_AVAILABLE if this list ever
+ * drifts ahead of it.
+ *
+ * A .docx is absent on purpose: no browser renders one. That is not a dead end
+ * any more, though — the preview falls back to the text v2 extracted from it.
  */
-const PREVIEWABLE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif']);
+const PREVIEWABLE = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'text/plain',
+]);
 
 export function isPreviewable(mimeType: string): boolean {
   return PREVIEWABLE.has(mimeType.toLowerCase());

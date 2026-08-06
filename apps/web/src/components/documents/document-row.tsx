@@ -8,6 +8,7 @@ import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
 import { formatBytes, type DocumentSummary } from '@/lib/documents';
 import { DURATION, EASE } from '@/lib/motion';
+import { DocumentStatusBadge } from './document-status';
 
 /** File-type chip. Truncated, or an extension like "spreadsheetml" bursts it. */
 function FileGlyph({ extension }: { extension: string }) {
@@ -203,6 +204,19 @@ export function DocumentRow({
           {formatBytes(item.size, locale)}
         </span>
       </div>
+
+      {/*
+       * Renders nothing for a READY document whose processing succeeded — which
+       * is nearly every row. A badge on all of them would be noise that hides
+       * the few actually in flight rather than surfacing them.
+       */}
+      <DocumentStatusBadge
+        status={item.status}
+        ocrStatus={item.metadata?.ocrStatus}
+        aiStatus={item.metadata?.aiStatus}
+        t={t}
+        className="hidden shrink-0 sm:inline-flex"
+      />
 
       <span className="text-text-muted hidden w-20 shrink-0 text-end text-xs sm:block">
         {formatBytes(item.size, locale)}

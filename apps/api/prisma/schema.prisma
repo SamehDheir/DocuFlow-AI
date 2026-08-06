@@ -47,6 +47,42 @@ enum DocumentStatus {
   DELETED
 }
 
+/// Per-step outcome for the v2 processing pipeline.
+///
+/// Tracked separately from DocumentStatus on purpose. A document whose OCR
+/// failed is still a document: the bytes uploaded fine and must stay
+/// downloadable, so it still reaches READY. Folding the failure into the
+/// lifecycle enum would strand it in a state nothing serves.
+///
+/// SKIPPED is not a failure — it is the honest answer for a file this pipeline
+/// has no text to extract from.
+enum ProcessingStage {
+  PENDING
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  SKIPPED
+}
+
+/// What a notification is about. The wording lives in the web dictionaries,
+/// never in the row — see the Notification model.
+enum NotificationType {
+  DOCUMENT_READY
+  DOCUMENT_FAILED
+  APPROVAL_REQUESTED
+  APPROVAL_APPROVED
+  APPROVAL_REJECTED
+  APPROVAL_CANCELLED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 // -----------------------------------------------------------------------------
 // Tenancy
 // -----------------------------------------------------------------------------
@@ -68,6 +104,8 @@ model Company {
   auditLogs           AuditLog[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  notifications       Notification[]
+  approvalRequests    ApprovalRequest[]
 
   @@map("companies")
 }
@@ -92,6 +130,18 @@ model User {
   auditLogs           AuditLog[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+
+  /// NOTE ON DELETE BEHAVIOUR: `ownedDocuments`, `createdFolders` and
+  /// `uploadedVersions` use Prisma's default Restrict, which is why a company
+  /// that owns documents cannot be deleted in one statement. The v2 relations
+  /// below deliberately do NOT add to that problem — they are Cascade (the row
+  /// is meaningless without its user) or SetNull (the row is a historical fact
+  /// that must outlive the account).
+  notifications       Notification[]       @relation("NotificationRecipient")
+  notificationsCaused Notification[]       @relation("NotificationActor")
+  approvalsRequested  ApprovalRequest[]    @relation("ApprovalRequester")
+  approvalsAssigned   ApprovalRequest[]    @relation("ApprovalAssignee")
+  approvalsDecided    ApprovalRequest[]    @relation("ApprovalDecider")
 
   /// Email is unique PER COMPANY, not globally — the same person may hold an
   /// account with two different customers, and a global unique would let one
@@ -271,12 +321,13 @@ model Document {
   /// physically removed by the delete endpoint.
   deletedAt    DateTime?      @map("deleted_at")
 
-  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  folder   Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  owner    User              @relation("DocumentOwner", fields: [ownerId], references: [id])
-  versions DocumentVersion[]
-  metadata DocumentMetadata?
-  tags     DocumentTag[]
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder    Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner     User              @relation("DocumentOwner", fields: [ownerId], references: [id])
+  versions  DocumentVersion[]
+  metadata  DocumentMetadata?
+  tags      DocumentTag[]
+  approvals ApprovalRequest[]
 
   @@index([companyId, folderId])
   @@index([companyId, status])
@@ -306,14 +357,64 @@ model DocumentVersion {
   @@map("document_versions")
 }
 
+/// The v2 extension point, as reserved by CLAUDE.md.
+///
+/// Everything derived FROM a document lands here rather than on `documents`:
+/// the parent row stays small and hot for listing, while extracted text — which
+/// can run to megabytes — sits in a table only the detail view and search touch.
 model DocumentMetadata {
   id          String   @id @default(uuid()) @db.Uuid
   documentId  String   @unique @map("document_id") @db.Uuid
   title       String?
   description String?
+  /// BCP-47, detected during AI analysis. Drives which dictionary the UI
+  /// renders a summary with, and eventually which FTS configuration is used.
   language    String?
   author      String?
+  /// Filled by the AI step when the user has not set them by hand.
   keywords    String[]
+
+  // --- OCR / text extraction -------------------------------------------------
+
+  /// Plain text of the document, however it was obtained: read directly for
+  /// text/plain, pulled from the text layer for digital PDFs and Office files,
+  /// or produced by vision OCR for scans. Feeds both search and the summariser.
+  extractedText  String?         @map("extracted_text")
+  ocrStatus      ProcessingStage @default(PENDING) @map("ocr_status")
+  /// Provider or parser message, kept so a failure is diagnosable from the UI
+  /// rather than only from the logs.
+  ocrError       String?         @map("ocr_error")
+  /// Pages actually processed. Lower than the document's page count when
+  /// AI_MAX_OCR_PAGES truncated a long scan — which the UI has to disclose,
+  /// because a partial index that looks complete is worse than no index.
+  ocrPages       Int?            @map("ocr_pages")
+  ocrCompletedAt DateTime?       @map("ocr_completed_at")
+
+  // --- AI analysis -----------------------------------------------------------
+
+  summary       String?
+  aiStatus      ProcessingStage @default(PENDING) @map("ai_status")
+  aiError       String?         @map("ai_error")
+  /// Which model produced the summary, so output can be attributed and
+  /// re-generated when the model behind it changes.
+  aiModel       String?         @map("ai_model")
+  aiCompletedAt DateTime?       @map("ai_completed_at")
+
+  // --- Search ----------------------------------------------------------------
+
+  /// Postgres has no Prisma type, so both columns are Unsupported: Prisma never
+  /// reads or writes them, but declaring them keeps `migrate dev` from
+  /// diffing them away as columns it cannot see.
+  ///
+  /// `search_vector` is maintained by a trigger rather than a GENERATED column,
+  /// because the expression calls unaccent(), which is not IMMUTABLE and so is
+  /// rejected in a generated column without a wrapper. See the migration.
+  searchVector Unsupported("tsvector")?     @map("search_vector")
+  /// Dormant. Written only when an embeddings key is configured — xAI publishes
+  /// no embeddings endpoint, so the key that does OCR cannot fill this. Sized
+  /// at Voyage's 1024 width; note OpenAI's default model is 1536 and will not
+  /// fit. No index yet: one over an all-NULL column buys nothing.
+  embedding    Unsupported("vector(1024)")?
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -374,4 +475,99 @@ model AuditLog {
   @@index([companyId, entityType, entityId])
   @@index([companyId, userId])
   @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Notifications
+// -----------------------------------------------------------------------------
+
+/// An addressed, persistent message — distinct from an audit log, which is an
+/// unaddressed record of what happened.
+///
+/// NO RENDERED TEXT IS STORED. A row carries a `type` and a JSON `payload`, and
+/// the web renders it through its dictionaries, exactly as the activity feed
+/// already renders audit actions. Storing a sentence would freeze it in the
+/// language it was written in: switching to Arabic would leave a year of
+/// English notifications behind, and every future copy edit would apply only to
+/// notifications sent after it. This way they are translated retroactively.
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  companyId String           @map("company_id") @db.Uuid
+  /// The recipient. Always taken from the server side — a client never names
+  /// whose notification it is reading.
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  /// Who caused it. Null for pipeline events, which nobody triggered directly.
+  actorId   String?          @map("actor_id") @db.Uuid
+
+  entityType String? @map("entity_type")
+  entityId   String? @map("entity_id")
+
+  /// Interpolation values for the translated string — a document name, an
+  /// actor's display name. Denormalised on purpose: a notification must still
+  /// read correctly after the document it refers to is renamed or deleted.
+  payload Json?
+
+  /// Null means unread. A nullable timestamp rather than a boolean, because
+  /// "when was this read" is free to keep and impossible to add retroactively.
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor   User?   @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  /// Serves both the inbox (newest first per user) and the unread badge.
+  @@index([companyId, userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+// -----------------------------------------------------------------------------
+// Approvals
+// -----------------------------------------------------------------------------
+
+/// A single-step request for sign-off on a document.
+///
+/// Deliberately not a multi-step chain. The spec assigns approvals to a
+/// "Department Manager" role that does not exist here — Departments is
+/// unallocated scope with no schema — so this is gated on the `documents.approve`
+/// permission against the real Owner/Admin/Member roles instead. Sequential
+/// approver chains can be added later as a child table without reshaping this.
+model ApprovalRequest {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @map("company_id") @db.Uuid
+  documentId String @map("document_id") @db.Uuid
+
+  requestedById String @map("requested_by_id") @db.Uuid
+  /// Null means "open to anyone holding documents.approve" rather than
+  /// unassigned-and-stuck. Naming one person is an option, not a requirement,
+  /// so a small company is not forced to invent a routing policy.
+  assigneeId    String? @map("assignee_id") @db.Uuid
+
+  status ApprovalStatus @default(PENDING)
+  /// Why the requester wants it approved.
+  note   String?
+
+  /// Why the decider approved or rejected. Separate from `note` so a rejection
+  /// reason can never overwrite the original request.
+  decisionNote String?   @map("decision_note")
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requestedBy User     @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  /// SetNull rather than Cascade: a decision is a historical fact and must
+  /// outlive the account that made it.
+  assignee    User?    @relation("ApprovalAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  decidedBy   User?    @relation("ApprovalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  /// The approvals inbox: open requests for a company, newest first.
+  @@index([companyId, status, createdAt])
+  /// A document's own approval history.
+  @@index([companyId, documentId])
+  @@map("approval_requests")
 }

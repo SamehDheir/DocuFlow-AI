@@ -51,6 +51,35 @@ export class TenantContextService {
     return this.storage.run({ companyId: '', bypass: true }, async () => await fn());
   }
 
+  /**
+   * Binds a specific tenant around `fn`. For work that has a company but no
+   * request to inherit it from — queue workers, scheduled sweeps.
+   *
+   * This is NOT a bypass. The guard filters normally; the company simply comes
+   * from the job payload instead of from a JWT. That distinction is the whole
+   * point: a worker processing one tenant's document must be as constrained as
+   * a request would be, and `runAsSystem()` would hand it the entire database.
+   *
+   * Like runAsSystem(), the callback is awaited INSIDE the scope rather than
+   * merely invoked there — a returned-but-unawaited Prisma promise would
+   * otherwise execute after the scope unwound, with no tenant bound, and fail
+   * closed. `run()` cannot do this because TenantMiddleware passes it a
+   * synchronous next().
+   */
+  async runAs<T>(
+    companyId: string,
+    userId: string | undefined,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    if (!companyId) {
+      throw new Error(
+        'runAs() requires a companyId. Use runAsSystem() for genuinely cross-tenant work.',
+      );
+    }
+
+    return this.storage.run({ companyId, userId }, async () => await fn());
+  }
+
   getStore(): TenantStore | undefined {
     return this.storage.getStore();
   }

@@ -65,18 +65,94 @@ const envSchema = z.object({
     ),
 
   /**
-   * AI provider — Phase 5 of the roadmap, not required for the MVP.
+   * AI provider.
    *
-   * Declared optional now so v2 needs no env migration. Anthropic handles
-   * OCR, summarisation and classification; embeddings come from Voyage,
-   * because Anthropic ships no embeddings endpoint at all.
+   * Every key is optional and the whole block may be absent: with no key
+   * configured the AI module falls back to NullAiProvider, which returns
+   * deterministic stub output. Processing still runs end to end, every UI state
+   * is still reachable, and CI does not need a credential.
+   *
+   * `xai` is the default provider. It speaks the OpenAI wire format at
+   * XAI_BASE_URL, so no vendor SDK is required — plain fetch is enough.
    */
-  AI_PROVIDER: z.enum(['anthropic', 'openai']).optional(),
+  AI_PROVIDER: z.enum(['groq', 'xai', 'anthropic', 'openai']).optional(),
+
+  /**
+   * Groq — LPU inference over open models. Note the spelling: this is NOT xAI's
+   * Grok, which is the block below.
+   *
+   * Two models, because Groq's text models reject image content outright and
+   * only the Qwen multimodal model accepts it. Blank GROQ_VISION_MODEL disables
+   * OCR while leaving summaries working.
+   */
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  GROQ_VISION_MODEL: z.string().default('qwen/qwen3.6-27b'),
+  GROQ_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+
+  /** xAI (Grok) — one model handles both text and vision. */
+  XAI_API_KEY: z.string().optional(),
+  XAI_MODEL: z.string().default('grok-4.5'),
+  XAI_BASE_URL: z.string().url().default('https://api.x.ai/v1'),
+
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+
+  /**
+   * Embeddings are a dormant seam.
+   *
+   * xAI exposes no public embeddings endpoint, so semantic search cannot run on
+   * the same key as OCR and summarisation. `document_metadata.embedding` is
+   * created at vector(1024) — Voyage's width — and stays NULL until one of
+   * these keys appears. Search runs on Postgres full text until then, so
+   * switching semantic search on later needs no migration.
+   *
+   * Note the width: OpenAI's text-embedding-3-small is 1536 and will NOT fit
+   * that column. Pair OPENAI_API_KEY with a model reduced to 1024 dimensions.
+   */
   VOYAGE_API_KEY: z.string().optional(),
-  EMBEDDING_MODEL: z.string().optional(),
+  EMBEDDING_MODEL: z.string().default('voyage-3'),
+
+  /**
+   * Processing limits.
+   *
+   * A scanned page costs one vision call, so an unbounded page count turns a
+   * single 400-page upload into a surprise invoice. Text-layer extraction is
+   * free and is always tried first — this cap only ever applies to true scans.
+   */
+  AI_OCR_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  /**
+   * Default 8, sized for a free tier rather than a paid one.
+   *
+   * Measured on Groq's free plan: 8,000 tokens per minute against roughly
+   * 1,200-3,000 tokens for one page image — a handful of pages before the limit
+   * bites. A higher cap does not read more pages, it just spends longer being
+   * rate limited. Raise it when the plan allows.
+   */
+  AI_MAX_OCR_PAGES: z.coerce.number().int().positive().default(8),
+  /** Hard ceiling on one provider call, so a hung request cannot pin a worker. */
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  /** Characters of extracted text sent to the summariser. */
+  AI_MAX_SUMMARY_CHARS: z.coerce.number().int().positive().default(60000),
+  /** Concurrent documents processed per API instance. */
+  QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  /**
+   * Whether this process consumes the queue as well as producing to it.
+   *
+   * On by default: one container runs both halves, which is the right shape for
+   * this deployment. Turning it off is what lets the API scale separately from
+   * the workers later — and it is what the e2e suite does, because each spec
+   * file boots its own AppModule and four workers racing for the same jobs
+   * would process each other's documents.
+   */
+  QUEUE_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });

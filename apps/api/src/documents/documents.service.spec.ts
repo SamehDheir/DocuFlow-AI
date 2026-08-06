@@ -7,6 +7,7 @@ import { DocumentStatus } from '@prisma/client';
 import type { AuditService } from '../common/audit/audit.service';
 import type { Env } from '../config/env.validation';
 import type { TenantGuardedClient } from '../prisma/tenant-guard';
+import type { DocumentProcessingProducer } from '../queue/document-processing.producer';
 import type { StorageService } from '../storage/storage.service';
 import { DocumentsService, type UploadedFile } from './documents.service';
 
@@ -18,7 +19,14 @@ const ENV: Partial<Env> = {
   MAX_FILE_SIZE: 1024,
   // text/plain is here on purpose: it is accepted for upload but is NOT in the
   // inline-previewable set, which is what the preview tests below rely on.
-  ALLOWED_MIME_TYPES: ['application/pdf', 'image/png', 'text/plain'],
+  ALLOWED_MIME_TYPES: [
+    'application/pdf',
+    'image/png',
+    'text/plain',
+    // Accepted for upload but not renderable in a browser — the case that
+    // proves inline preview is a narrower allowlist than upload.
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ],
 };
 
 interface DocRow {
@@ -145,16 +153,27 @@ async function setup(storageOverrides: Partial<StorageMock> = {}) {
     get: (key: keyof Env) => ENV[key],
   } as unknown as ConfigService<Env, true>;
 
+  /**
+   * The queue is stubbed rather than run. These specs are about the upload
+   * pipeline's own ordering and failure handling; whether a job is later picked
+   * up is the worker's business and needs a live Redis, which belongs in e2e.
+   */
+  const processing: { enqueue: jest.Mock; forget: jest.Mock } = {
+    enqueue: jest.fn().mockResolvedValue(true),
+    forget: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new DocumentsService(
     db as unknown as TenantGuardedClient,
     storage as unknown as StorageService,
     audit as unknown as AuditService,
+    processing as unknown as DocumentProcessingProducer,
     config,
   );
 
   const dir = await mkdtemp(join(tmpdir(), 'docuflow-spec-'));
 
-  return { service, audit, storage, documents, folders, versions, dir };
+  return { service, audit, storage, processing, documents, folders, versions, dir };
 }
 
 /** Writes a temp file that stands in for what multer would have produced. */
@@ -170,15 +189,51 @@ async function fakeUpload(
 
 describe('DocumentsService', () => {
   describe('upload', () => {
-    it('stores the file, marks it READY and writes version 1', async () => {
+    it('stores the file, marks it PROCESSING and writes version 1', async () => {
       const { service, storage, versions, dir } = await setup();
       const file = await fakeUpload(dir);
 
       const document = await service.upload(file, {}, USER, CONTEXT, COMPANY);
 
-      expect(document.status).toBe(DocumentStatus.READY);
+      /**
+       * PROCESSING, not READY. v1 finished the upload here; v2 hands off to the
+       * queue, and only the worker declares a document READY once OCR and AI
+       * analysis have run.
+       */
+      expect(document.status).toBe(DocumentStatus.PROCESSING);
       expect(storage.putFile).toHaveBeenCalledTimes(1);
       expect(versions).toEqual([expect.objectContaining({ versionNumber: 1 })]);
+    });
+
+    it('queues processing with the tenant from the token, after the commit', async () => {
+      const { service, processing, dir } = await setup();
+
+      const document = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+
+      /**
+       * The job has to carry its own companyId: a worker runs outside any
+       * request, so there is no JWT for the tenant guard to read and an
+       * unaccompanied job would fail closed on its first query.
+       */
+      expect(processing.enqueue).toHaveBeenCalledWith({
+        documentId: document.id,
+        companyId: COMPANY,
+        userId: USER,
+      });
+    });
+
+    it('still returns the document when the queue is unreachable', async () => {
+      const { service, processing, dir } = await setup();
+      processing.enqueue.mockResolvedValue(false);
+
+      const document = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+
+      /**
+       * The bytes are in MinIO and the row is committed, so the upload
+       * succeeded. It sits at PROCESSING until someone reprocesses it — which
+       * is visible and recoverable, unlike reporting a stored file as failed.
+       */
+      expect(document.status).toBe(DocumentStatus.PROCESSING);
     });
 
     it('derives the storage key server-side, under the company prefix', async () => {
@@ -343,17 +398,39 @@ describe('DocumentsService', () => {
   });
 
   describe('preview', () => {
-    it('refuses to render a type that is not safe inline', async () => {
-      // text/plain is accepted for upload but must not be rendered in the
-      // user's own origin — a browser that sniffs it as HTML turns an uploaded
-      // file into stored XSS.
+    it('refuses to render a type no browser can display', async () => {
+      /**
+       * A .docx streamed inline would just download, so the preview pane asks
+       * for nothing and renders the extracted text instead. Refusing here keeps
+       * the server authoritative if the client's mirrored allowlist drifts.
+       */
       const { service, dir } = await setup();
-      const file = await fakeUpload(dir, { name: 'notes.txt', type: 'text/plain' });
+      const file = await fakeUpload(dir, {
+        name: 'report.docx',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
       const uploaded = await service.upload(file, {}, USER, CONTEXT, COMPANY);
 
       await expect(service.openForDownload(uploaded.id, CONTEXT, { inline: true })).rejects.toThrow(
         /cannot be previewed/,
       );
+    });
+
+    it('renders text/plain inline, hardened by the response headers', async () => {
+      /**
+       * Safe despite being user-supplied bytes in our own origin: the controller
+       * sets `X-Content-Type-Options: nosniff` so a browser cannot re-interpret
+       * it as HTML, and `Content-Security-Policy: sandbox; default-src 'none'`
+       * neuters anything that survives. The web additionally re-wraps the blob
+       * with a type from its own allowlist rather than trusting the response.
+       */
+      const { service, dir } = await setup();
+      const file = await fakeUpload(dir, { name: 'notes.txt', type: 'text/plain' });
+      const uploaded = await service.upload(file, {}, USER, CONTEXT, COMPANY);
+
+      const { document } = await service.openForDownload(uploaded.id, CONTEXT, { inline: true });
+
+      expect(document.mimeType).toBe('text/plain');
     });
 
     it('still allows that type to be downloaded as an attachment', async () => {

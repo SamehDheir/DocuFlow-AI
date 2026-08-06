@@ -119,7 +119,12 @@ describe('Documents (e2e)', () => {
       const uploaded = (await uploadTo(auth).field('folderId', folder.id).expect(201))
         .body as DocumentBody;
 
-      expect(uploaded.status).toBe('READY');
+      /**
+       * PROCESSING, not READY. v1 finished an upload inside the request; v2
+       * returns as soon as the bytes are safe and hands the document to a queue
+       * worker, which walks it through OCR and AI analysis before READY.
+       */
+      expect(uploaded.status).toBe('PROCESSING');
       expect(uploaded.folderId).toBe(folder.id);
       // BigInt is serialised as a string, or JSON.stringify throws.
       expect(uploaded.size).toBe(String(PDF_BYTES.length));
