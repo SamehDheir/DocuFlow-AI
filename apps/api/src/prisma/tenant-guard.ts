@@ -17,6 +17,7 @@ const TENANT_SCOPED_MODELS = new Set([
   'PasswordResetToken',
   'Notification',
   'ApprovalRequest',
+  'Invitation',
 ]);
 
 /**
@@ -40,6 +41,20 @@ const TRANSITIVELY_SCOPED_MODELS = new Set([
   'RolePermission',
   'UserRole',
 ]);
+
+/**
+ * The three lists above, exposed for `tenant-registration.spec.ts`.
+ *
+ * That spec parses schema.prisma and fails if a model carrying a `companyId`
+ * column appears in none of them — the "keep in sync" comment on
+ * TENANT_SCOPED_MODELS was already missed once, and a missing entry means the
+ * guard skips the model silently rather than failing closed.
+ */
+export const TENANT_MODEL_REGISTRY = {
+  scoped: TENANT_SCOPED_MODELS,
+  transitive: TRANSITIVELY_SCOPED_MODELS,
+  root: TENANT_ROOT_MODEL,
+} as const;
 
 /** Operations whose payload lives in `args.data`. */
 const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn']);
