@@ -45,6 +45,7 @@ export default async function AppLayout({
             approvals: dict.approvals.title,
             trash: dict.trash.title,
             activity: dict.activity.title,
+            members: dict.members.title,
           }}
         >
           {children}

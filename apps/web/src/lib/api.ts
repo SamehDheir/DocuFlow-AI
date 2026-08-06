@@ -90,9 +90,16 @@ export function apiGet<T>(path: string, token: string): Promise<T> {
   return apiFetch<T>(path, { headers: { Authorization: `Bearer ${token}` } });
 }
 
-/** Authenticated JSON body request. */
+/**
+ * Authenticated JSON body request.
+ *
+ * PUT is here for whole-resource replacement — setting a member's roles sends
+ * the complete set, so repeating the call is idempotent and two administrators
+ * cannot interleave into a combination neither chose. PATCH would imply a
+ * delta.
+ */
 export function apiSend<T>(
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   token: string,
   body?: unknown,

@@ -24,6 +24,7 @@ interface NavLabels {
   activity: string;
   search: string;
   approvals: string;
+  members: string;
 }
 
 /**
@@ -44,6 +45,7 @@ function navLinks(lang: Locale, nav: NavLabels) {
     { href: `/${lang}/approvals`, label: nav.approvals },
     { href: `/${lang}/trash`, label: nav.trash },
     { href: `/${lang}/activity`, label: nav.activity },
+    { href: `/${lang}/members`, label: nav.members },
   ];
 }
 
@@ -96,7 +98,7 @@ export function AppShell({
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-6 sm:px-8">
           <div className="flex min-w-0 items-center gap-1.5">
             {/*
-             * The whole of navigation below `sm`. Rendered only where the tab
+             * The whole of navigation below `lg`. Rendered only where the tab
              * strip is hidden, so the two are never both present and never
              * both absent.
              */}
@@ -105,7 +107,7 @@ export function AppShell({
               onClick={() => setMenuOpen(true)}
               aria-label={t.openMenu}
               aria-expanded={menuOpen}
-              className="text-text-muted hover:bg-surface-inset hover:text-text duration-fast ease-out-quint focus-visible:outline-focus -ms-2 flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 sm:hidden"
+              className="text-text-muted hover:bg-surface-inset hover:text-text duration-fast ease-out-quint focus-visible:outline-focus -ms-2 flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
             >
               <svg
                 viewBox="0 0 16 16"
@@ -243,14 +245,16 @@ function MobileNav({
  * identifiable without seeing it, and the underline is drawn with a layout
  * animation so it slides between tabs instead of blinking.
  *
- * Hidden below `sm`, where the header has no room — the hamburger and its
- * drawer take over there, from the same link list.
+ * Hidden below `lg`, where seven tabs plus the logo plus the account controls
+ * do not fit in one 64px row — the hamburger and its drawer take over there,
+ * from the same link list. The cut is at `lg` rather than `sm` because the
+ * strip does not merely look tight below it, it overflows.
  */
 function PrimaryNav({ lang, nav }: { lang: Locale; nav: NavLabels }) {
   const pathname = usePathname();
 
   return (
-    <nav className="hidden items-center gap-1 sm:flex">
+    <nav className="hidden items-center gap-1 lg:flex">
       {navLinks(lang, nav).map((link) => {
         const active = pathname === link.href;
 

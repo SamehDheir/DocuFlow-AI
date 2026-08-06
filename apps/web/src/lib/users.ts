@@ -1,4 +1,4 @@
-import { apiGet } from './api';
+import { apiGet, apiSend } from './api';
 
 /**
  * Colleagues within the current company.
@@ -24,4 +24,15 @@ export interface MemberList {
 
 export function listUsers(token: string): Promise<MemberList> {
   return apiGet<MemberList>('/users', token);
+}
+
+/**
+ * Replaces a member's roles with exactly this set.
+ *
+ * Behind `roles.manage`, which only Owner holds — Admin manages people but
+ * deliberately not the permission model, or the distinction between the two
+ * would be meaningless. The API refuses to demote the last Owner.
+ */
+export function setUserRoles(token: string, userId: string, roleIds: string[]): Promise<Member> {
+  return apiSend('PUT', `/users/${userId}/roles`, token, { roleIds });
 }

@@ -527,5 +527,101 @@
       "title": "Approvals",
       "description": "Document approval requests and decisions."
     }
+  },
+  "members": {
+    "title": "Members",
+    "subtitle": "Who can reach this workspace, and what each of them may do.",
+    "tabs": {
+      "members": "Members",
+      "invitations": "Invitations"
+    },
+    "loading": "Loading members",
+    "columns": {
+      "name": "Name",
+      "role": "Role",
+      "joined": "Joined"
+    },
+    "you": "You",
+    "deactivated": "Deactivated",
+    "roleLabel": "Role",
+    "changeRole": "Change role for {name}",
+    "roleChanged": "{name} is now {role}",
+    "countOne": "1 member",
+    "countMany": "{count} members",
+    "empty": {
+      "title": "No one else yet",
+      "body": "Invite a colleague and they will appear here."
+    },
+    "error": {
+      "title": "Could not load members",
+      "retry": "Try again"
+    },
+    "invite": {
+      "action": "Invite someone",
+      "title": "Invite someone",
+      "description": "They will join this workspace at the role you choose.",
+      "emailLabel": "Email address",
+      "emailPlaceholder": "colleague@company.com",
+      "roleLabel": "Role",
+      "submit": "Create invitation",
+      "cancel": "Cancel",
+      "created": "Invitation created for {email}",
+      "linkTitle": "Share this link",
+      "linkBody": "There is no email delivery configured, so send this to {email} yourself. It works once and expires in seven days.",
+      "copy": "Copy link",
+      "copied": "Link copied",
+      "done": "Done"
+    },
+    "invitations": {
+      "empty": {
+        "title": "No invitations",
+        "body": "Invitations you create will be listed here."
+      },
+      "loading": "Loading invitations",
+      "columns": {
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "invitedBy": "Invited by"
+      },
+      "status": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "REVOKED": "Revoked",
+        "EXPIRED": "Expired"
+      },
+      "expires": "Expires {when}",
+      "revoke": "Revoke",
+      "revoked": "Invitation revoked",
+      "revokeTitle": "Revoke this invitation?",
+      "revokeBody": "The link sent to {email} will stop working immediately.",
+      "revokeSubmit": "Revoke invitation",
+      "countOne": "1 invitation",
+      "countMany": "{count} invitations"
+    },
+    "meta": {
+      "title": "Members",
+      "description": "Invite colleagues and manage what they can do."
+    }
+  },
+  "invite": {
+    "title": "Join {company}",
+    "subtitle": "You have been invited to join {company} as {role}.",
+    "checking": "Checking your invitation",
+    "emailLabel": "Email address",
+    "emailHint": "This is the address the invitation was sent to and cannot be changed.",
+    "firstNameLabel": "First name",
+    "lastNameLabel": "Last name",
+    "passwordLabel": "Password",
+    "submit": "Create account",
+    "invalid": {
+      "title": "This invitation cannot be used",
+      "body": "It may have expired, been revoked, or already been accepted. Ask whoever invited you for a new link.",
+      "action": "Go to sign in"
+    },
+    "meta": {
+      "title": "Accept your invitation",
+      "description": "Join a DocuFlow AI workspace you have been invited to."
+    }
   }
 }

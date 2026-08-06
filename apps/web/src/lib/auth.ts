@@ -64,6 +64,21 @@ export function registerCompany(input: {
 }
 
 /**
+ * Registration's other half: an account inside a company that already exists.
+ *
+ * No company name and no email — both come from the invitation token, which is
+ * the credential here. The client never gets to name the tenant it is joining.
+ */
+export function acceptInvitation(input: {
+  token: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+}) {
+  return post<Session>('/auth/accept-invitation', input);
+}
+
+/**
  * Exchanges the httpOnly refresh cookie for a new session.
  *
  * This is also how a reload recovers: the access token was only ever in memory,

@@ -30,9 +30,24 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const SESSION_COOKIE = 'docuflow_session';
 
 /** Pages that require a session, matched by path after the locale segment. */
-const PROTECTED = ['/dashboard', '/documents', '/search', '/approvals', '/trash', '/activity'];
+const PROTECTED = [
+  '/dashboard',
+  '/documents',
+  '/search',
+  '/approvals',
+  '/trash',
+  '/activity',
+  '/members',
+];
 
-/** Pages that make no sense once signed in. */
+/**
+ * Pages that make no sense once signed in.
+ *
+ * `/invite` is deliberately absent. It is an auth page, but someone already
+ * signed in to one company may legitimately hold an invitation to another, and
+ * bouncing them to their own dashboard would make that link impossible to use
+ * without signing out first.
+ */
 const AUTH_ONLY = ['/login', '/register', '/forgot-password'];
 
 function matches(path: string, routes: string[]): boolean {

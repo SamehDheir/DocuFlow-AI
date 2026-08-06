@@ -527,5 +527,101 @@
       "title": "الاعتمادات",
       "description": "طلبات اعتماد المستندات وقراراتها."
     }
+  },
+  "members": {
+    "title": "الأعضاء",
+    "subtitle": "من يصل إلى مساحة العمل هذه، وما الذي يستطيع كلٌّ منهم فعله.",
+    "tabs": {
+      "members": "الأعضاء",
+      "invitations": "الدعوات"
+    },
+    "loading": "جارٍ تحميل الأعضاء",
+    "columns": {
+      "name": "الاسم",
+      "role": "الدور",
+      "joined": "تاريخ الانضمام"
+    },
+    "you": "أنت",
+    "deactivated": "معطَّل",
+    "roleLabel": "الدور",
+    "changeRole": "تغيير دور {name}",
+    "roleChanged": "{name} أصبح {role}",
+    "countOne": "عضو واحد",
+    "countMany": "{count} أعضاء",
+    "empty": {
+      "title": "لا أحد غيرك بعد",
+      "body": "ادعُ زميلاً وسيظهر هنا."
+    },
+    "error": {
+      "title": "تعذّر تحميل الأعضاء",
+      "retry": "أعد المحاولة"
+    },
+    "invite": {
+      "action": "ادعُ شخصاً",
+      "title": "ادعُ شخصاً",
+      "description": "سينضم إلى مساحة العمل بالدور الذي تختاره.",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "colleague@company.com",
+      "roleLabel": "الدور",
+      "submit": "إنشاء الدعوة",
+      "cancel": "إلغاء",
+      "created": "أُنشئت دعوة لـ {email}",
+      "linkTitle": "شارك هذا الرابط",
+      "linkBody": "لا يوجد إرسال بريد مُهيّأ، فأرسل الرابط بنفسك إلى {email}. يعمل مرة واحدة وينتهي خلال سبعة أيام.",
+      "copy": "انسخ الرابط",
+      "copied": "نُسخ الرابط",
+      "done": "تم"
+    },
+    "invitations": {
+      "empty": {
+        "title": "لا توجد دعوات",
+        "body": "ستُدرج هنا الدعوات التي تنشئها."
+      },
+      "loading": "جارٍ تحميل الدعوات",
+      "columns": {
+        "email": "البريد الإلكتروني",
+        "role": "الدور",
+        "status": "الحالة",
+        "invitedBy": "الداعي"
+      },
+      "status": {
+        "PENDING": "معلَّقة",
+        "ACCEPTED": "مقبولة",
+        "REVOKED": "ملغاة",
+        "EXPIRED": "منتهية"
+      },
+      "expires": "تنتهي {when}",
+      "revoke": "إلغاء",
+      "revoked": "أُلغيت الدعوة",
+      "revokeTitle": "إلغاء هذه الدعوة؟",
+      "revokeBody": "سيتوقف الرابط المُرسل إلى {email} عن العمل فوراً.",
+      "revokeSubmit": "إلغاء الدعوة",
+      "countOne": "دعوة واحدة",
+      "countMany": "{count} دعوات"
+    },
+    "meta": {
+      "title": "الأعضاء",
+      "description": "ادعُ زملاءك وأدر ما يستطيعون فعله."
+    }
+  },
+  "invite": {
+    "title": "انضم إلى {company}",
+    "subtitle": "دُعيت للانضمام إلى {company} بدور {role}.",
+    "checking": "جارٍ التحقق من دعوتك",
+    "emailLabel": "البريد الإلكتروني",
+    "emailHint": "هذا هو العنوان الذي أُرسلت إليه الدعوة ولا يمكن تغييره.",
+    "firstNameLabel": "الاسم الأول",
+    "lastNameLabel": "اسم العائلة",
+    "passwordLabel": "كلمة المرور",
+    "submit": "إنشاء الحساب",
+    "invalid": {
+      "title": "لا يمكن استخدام هذه الدعوة",
+      "body": "ربما انتهت صلاحيتها أو أُلغيت أو استُخدمت من قبل. اطلب رابطاً جديداً ممن دعاك.",
+      "action": "اذهب إلى تسجيل الدخول"
+    },
+    "meta": {
+      "title": "اقبل دعوتك",
+      "description": "انضم إلى مساحة عمل في DocuFlow AI دُعيت إليها."
+    }
   }
 }
