@@ -6,12 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 npm-workspaces monorepo. **v1 and v2 are both complete end to end.**
 
-| Workspace       | State                                                                                                                                                                                         |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace       | State                                                                                                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `@docuflow/api` | NestJS 11 + Prisma 7. Tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents`, `queue`, `ai`, `search`, `notifications`, `events`, `approvals`, `users`, `roles`, `invitations` modules. |
-| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/search`, `/approvals`, `/trash`, `/activity`, `/members`.                            |
-| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Redis now carries the BullMQ queue and the SSE event bus.                                                                          |
-| Database        | Five migrations applied — `init`, `auth_tokens`, `v2_ai_notifications_approvals`, `arabic_search_normalisation`, `members_and_invitations`. 18 tables with composite tenant indexes.        |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/search`, `/approvals`, `/trash`, `/activity`, `/members`.                                                 |
+| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Redis now carries the BullMQ queue and the SSE event bus.                                                                                                           |
+| Database        | Five migrations applied — `init`, `auth_tokens`, `v2_ai_notifications_approvals`, `arabic_search_normalisation`, `members_and_invitations`. 18 tables with composite tenant indexes.                                           |
 
 A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash — and now: an upload is text-extracted and summarised on a queue worker, its contents are full-text searchable in Arabic and English, the browser is told live over SSE when it finishes, and a document can be routed for single-step sign-off. Every mutation is audited. **250 unit tests and 65 e2e tests pass.**
 
@@ -172,7 +172,7 @@ Avoid the recognisable AI-default tells: stock indigo/violet gradients, a centre
 - **The invitation is consumed by the same statement that checks it is open** — `updateMany` with `acceptedAt: null, revokedAt: null` matches exactly once, so two people racing one forwarded link cannot both get an account.
 - **`Invitation` is shaped after `PasswordResetToken`**: same keyed HMAC digest via `digestToken()`, single use, expiry (7 days). Only the digest is stored.
 - **There is still no mailer**, so `POST /api/invitations` returns the link to the inviter, who delivers it. Withholding the token from the administrator who just created it would make the feature unusable, not safer — they already hold `users.invite`. Development logs it; production does not.
-- **`email` on an invitation is what it was issued *for*, not proof of who accepts.** Anyone holding the link can accept, exactly as with a reset link. The accept form shows the address disabled so it cannot be redirected to someone else.
+- **`email` on an invitation is what it was issued _for_, not proof of who accepts.** Anyone holding the link can accept, exactly as with a reset link. The accept form shows the address disabled so it cannot be redirected to someone else.
 - **Preview is `POST /api/invitations/preview` with the token in the body**, not a GET with it in the path — the token is a bearer credential and a path lands in every access log between the browser and the API. Expired, revoked, used and unknown all return one message.
 - **`roles.manage` gates role assignment, not `users.update`.** Editing someone's name and granting them authority are different powers; Admin holds the first and deliberately not the second, or the distinction from Owner would be meaningless. The web reflects this — an Admin sees roles as text where an Owner sees a picker.
 - **The last Owner cannot be demoted.** Owner is the only role holding `roles.manage`, so that edit produces a company nobody can ever administer again, and there is no repair path through the API. The check counts holders rather than trusting the caller not to be the last one.
