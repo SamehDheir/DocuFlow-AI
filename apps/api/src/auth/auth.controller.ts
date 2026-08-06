@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { AcceptInvitationDto } from '../invitations/dto/invitation.dto';
 import { AuthService } from './auth.service';
 import type { AuthResult, AuthenticatedUser, SessionUser } from './auth.types';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -40,6 +41,22 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<SessionResponse> {
     const result = await this.auth.register(dto, contextOf(request));
+    return this.startSession(response, result);
+  }
+
+  /**
+   * Public for the same reason register is: the person accepting has no account
+   * yet. The invitation token in the body is the credential, and it names the
+   * company — the client never gets to.
+   */
+  @Public()
+  @Post('accept-invitation')
+  async acceptInvitation(
+    @Body() dto: AcceptInvitationDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<SessionResponse> {
+    const result = await this.auth.acceptInvitation(dto, contextOf(request));
     return this.startSession(response, result);
   }
 

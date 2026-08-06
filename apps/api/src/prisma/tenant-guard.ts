@@ -15,6 +15,9 @@ const TENANT_SCOPED_MODELS = new Set([
   'AuditLog',
   'RefreshToken',
   'PasswordResetToken',
+  'Notification',
+  'ApprovalRequest',
+  'Invitation',
 ]);
 
 /**
@@ -39,6 +42,20 @@ const TRANSITIVELY_SCOPED_MODELS = new Set([
   'UserRole',
 ]);
 
+/**
+ * The three lists above, exposed for `tenant-registration.spec.ts`.
+ *
+ * That spec parses schema.prisma and fails if a model carrying a `companyId`
+ * column appears in none of them — the "keep in sync" comment on
+ * TENANT_SCOPED_MODELS was already missed once, and a missing entry means the
+ * guard skips the model silently rather than failing closed.
+ */
+export const TENANT_MODEL_REGISTRY = {
+  scoped: TENANT_SCOPED_MODELS,
+  transitive: TRANSITIVELY_SCOPED_MODELS,
+  root: TENANT_ROOT_MODEL,
+} as const;
+
 /** Operations whose payload lives in `args.data`. */
 const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn']);
 
@@ -52,6 +69,8 @@ const UNIQUE_READ_OPERATIONS = new Set(['findUnique', 'findUniqueOrThrow']);
 type QueryArgs = {
   where?: Record<string, unknown>;
   data?: Record<string, unknown> | Record<string, unknown>[];
+  /** upsert only — the row to insert when `where` matches nothing. */
+  create?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -64,7 +83,19 @@ type QueryArgs = {
  * exactly the bug class this system cannot afford.
  *
  * Use `TenantContextService.runAsSystem()` for the legitimate exceptions
- * (registration, login lookup, platform admin, queue workers).
+ * (registration, login lookup, platform admin), or `runAs()` to bind a specific
+ * company in a queue worker, which has no request to inherit one from.
+ *
+ * LIMITATION — RAW QUERIES ARE NOT COVERED. This extension hooks
+ * `query.$allModels`, which is the model delegate API. `$queryRaw`,
+ * `$queryRawUnsafe` and `$executeRaw` bypass it entirely and are NOT filtered:
+ * they do not name a model, so there is nothing here to intercept.
+ *
+ * Full-text search has to be raw — Prisma cannot express tsvector ranking — so
+ * every statement in SearchService pins `company_id` by hand from
+ * TenantContextService and is covered by a spec that asserts the predicate is
+ * present. Any future raw query must do the same. There is no automatic
+ * protection at this layer to fall back on.
  */
 export function applyTenantGuard(client: PrismaClient, tenant: TenantContextService) {
   return client.$extends({
@@ -112,6 +143,49 @@ export function applyTenantGuard(client: PrismaClient, tenant: TenantContextServ
             return query(typedArgs);
           }
 
+          /**
+           * upsert: allowed only when the caller has already pinned the tenant.
+           *
+           * It cannot be handled like findUnique. That verifies AFTER execution,
+           * which is fine for a read — the row is simply withheld — but an
+           * upsert WRITES. By the time a post-check noticed the row belonged to
+           * someone else, another tenant's data would already be overwritten.
+           *
+           * It cannot be handled like a create either: `where` must be a unique
+           * selector, and Prisma rejects a bare `companyId` added to one.
+           *
+           * So the tenant has to come from the selector itself — a compound
+           * unique such as `@@unique([companyId, name])`, whose where-clause
+           * already carries the company. Anything else is refused rather than
+           * guessed at: reach the row through its scoped parent as a nested
+           * write, or do an explicit findFirst + create/update.
+           */
+          if (operation === 'upsert') {
+            const pinned = findScopeValue(typedArgs.where, scopeField);
+
+            if (pinned === undefined) {
+              throw new Error(
+                `Unscoped upsert on ${model}. An upsert writes before it can be verified, so ` +
+                  `its where-clause must pin the tenant — use a compound unique that includes ` +
+                  `${scopeField}, a nested write through the scoped parent, or findFirst + create/update.`,
+              );
+            }
+
+            if (pinned !== companyId) {
+              throw new Error(
+                `Cross-tenant upsert on ${model}: where-clause targets a different company.`,
+              );
+            }
+
+            // Stamp the create half, so the inserted row cannot land in a
+            // different company than the one the where-clause selected.
+            if (!isRoot && typedArgs.create) {
+              typedArgs.create = { ...typedArgs.create, companyId };
+            }
+
+            return query(typedArgs);
+          }
+
           // findUnique/findUniqueOrThrow: `where` only accepts unique fields, so
           // the row is fetched and then checked. Returning null on a mismatch
           // makes another tenant's record indistinguishable from a missing one,
@@ -138,6 +212,55 @@ export function applyTenantGuard(client: PrismaClient, tenant: TenantContextServ
       },
     },
   });
+}
+
+/**
+ * Reads the tenant value out of a unique where-clause.
+ *
+ * Looks at the top level first (`{ id: … }` on Company), then one level down
+ * for Prisma's compound-unique form (`{ companyId_name: { companyId, name } }`).
+ * Returns undefined when the clause does not pin the tenant at all.
+ */
+function findScopeValue(
+  where: Record<string, unknown> | undefined,
+  scopeField: string,
+): string | undefined {
+  if (!where) {
+    return undefined;
+  }
+
+  if (typeof where[scopeField] === 'string') {
+    return where[scopeField];
+  }
+
+  for (const value of Object.values(where)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = (value as Record<string, unknown>)[scopeField];
+
+      if (typeof nested === 'string') {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Declares that a create payload will be tenant-stamped by the guard.
+ *
+ * `applyTenantGuard` injects `companyId` at runtime, but Prisma's generated
+ * input types are static and demand it up front — so every create against a
+ * tenant-scoped model would otherwise need a cast. This is the one sanctioned
+ * place that assertion lives, which keeps it greppable instead of scattered.
+ *
+ *   data: tenantCreate({ name, parentId, createdById })
+ *
+ * Passing companyId yourself still type-checks, and the guard overwrites it —
+ * a client-supplied value can never survive.
+ */
+export function tenantCreate<T extends object>(data: T): T & { companyId: string } {
+  return data as T & { companyId: string };
 }
 
 export type TenantGuardedClient = ReturnType<typeof applyTenantGuard>;

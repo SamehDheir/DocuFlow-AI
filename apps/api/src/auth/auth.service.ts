@@ -13,8 +13,14 @@ import { compare, hash } from 'bcrypt';
 import { AuditService } from '../common/audit/audit.service';
 import { TenantContextService } from '../common/tenant/tenant-context.service';
 import type { Env } from '../config/env.validation';
+import type { AcceptInvitationDto } from '../invitations/dto/invitation.dto';
+import { InvitationsService } from '../invitations/invitations.service';
 import { DEFAULT_ROLES, OWNER_ROLE } from '../permissions/permissions.catalogue';
-import { PermissionsService } from '../permissions/permissions.service';
+import {
+  PermissionsService,
+  WITH_ROLE_PERMISSIONS,
+  permissionsOf,
+} from '../permissions/permissions.service';
 import { TENANT_PRISMA } from '../prisma/prisma.module';
 import type { TenantGuardedClient } from '../prisma/tenant-guard';
 import type { AuthResult, AuthenticatedUser, SessionUser } from './auth.types';
@@ -67,6 +73,7 @@ export class AuthService {
     private readonly permissions: PermissionsService,
     private readonly audit: AuditService,
     private readonly tenant: TenantContextService,
+    private readonly invitations: InvitationsService,
     @Inject(TENANT_PRISMA) private readonly db: TenantGuardedClient,
     config: ConfigService<Env, true>,
   ) {
@@ -153,6 +160,91 @@ export class AuthService {
         return created;
       }),
     );
+
+    return this.issueSession(user, context);
+  }
+
+  /**
+   * Creates an account inside an existing company, from an invitation token.
+   *
+   * This is registration's other half. `register` necessarily creates a new
+   * company — the tenant does not exist yet — so without this path a workspace
+   * could never hold more than the person who opened it, and the role model
+   * would have nothing to apply to.
+   *
+   * Runs as system for the same reason register does: an anonymous request has
+   * no tenant bound, and the company being joined is discovered from the token
+   * rather than supplied by the caller. Accepting `companyId` from the body is
+   * exactly the cross-tenant hole the guard exists to prevent.
+   */
+  async acceptInvitation(dto: AcceptInvitationDto, context: RequestContext): Promise<AuthResult> {
+    const passwordHash = await hash(dto.password, this.bcryptRounds);
+
+    const user = await this.tenant.runAsSystem(async () => {
+      const grant = await this.invitations.resolve(dto.token);
+
+      return this.db.$transaction(async (tx) => {
+        /**
+         * Re-checked inside the transaction, against the invitation's company.
+         * The invite was refused at creation if the address was already a
+         * member, but that was a different request — someone may have joined in
+         * between, and email is unique per company.
+         */
+        const taken = await tx.user.findFirst({
+          where: { companyId: grant.companyId, email: grant.email },
+          select: { id: true },
+        });
+
+        if (taken) {
+          throw new ConflictException({
+            message: 'An account with this email already exists. Sign in instead.',
+            errors: { email: 'This email is already registered' },
+          });
+        }
+
+        /**
+         * Consumed by the same statement that checks it is still open, so two
+         * people racing the same forwarded link cannot both get an account:
+         * `updateMany` with the null guard matches one row exactly once.
+         */
+        const consumed = await tx.invitation.updateMany({
+          where: { id: grant.id, acceptedAt: null, revokedAt: null },
+          data: { acceptedAt: new Date() },
+        });
+
+        if (consumed.count === 0) {
+          throw new BadRequestException('This invitation is invalid, expired, or already used');
+        }
+
+        const created = await tx.user.create({
+          data: {
+            companyId: grant.companyId,
+            email: grant.email,
+            passwordHash,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            roles: { create: { roleId: grant.roleId } },
+          },
+          include: WITH_ROLES,
+        });
+
+        await this.audit.record(
+          {
+            action: 'auth.invitation_accepted',
+            entityType: 'User',
+            entityId: created.id,
+            companyId: grant.companyId,
+            userId: created.id,
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent,
+            metadata: { invitationId: grant.id },
+          },
+          tx,
+        );
+
+        return created;
+      });
+    });
 
     return this.issueSession(user, context);
   }
@@ -378,16 +470,7 @@ export class AuthService {
       where: { id: principal.sub },
       include: {
         company: { select: { id: true, name: true, slug: true } },
-        roles: {
-          select: {
-            role: {
-              select: {
-                name: true,
-                permissions: { select: { permission: { select: { name: true } } } },
-              },
-            },
-          },
-        },
+        ...WITH_ROLE_PERMISSIONS,
       },
     });
 
@@ -395,15 +478,11 @@ export class AuthService {
       throw new UnauthorizedException('Session is no longer valid');
     }
 
-    const permissions = new Set(
-      user.roles.flatMap((link) => link.role.permissions.map((entry) => entry.permission.name)),
-    );
-
     return {
       ...toSessionUser(user),
       company: user.company,
       roles: user.roles.map((link) => link.role.name),
-      permissions: [...permissions].sort(),
+      permissions: [...permissionsOf(user)].sort(),
     };
   }
 

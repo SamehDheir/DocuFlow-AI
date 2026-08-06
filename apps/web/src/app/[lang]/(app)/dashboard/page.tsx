@@ -30,5 +30,14 @@ export default async function DashboardPage({ params }: { params: Promise<{ lang
 
   const dict = await getDictionary(lang);
 
-  return <DashboardView t={dict.dashboard} common={dict.common} />;
+  return (
+    <DashboardView
+      lang={lang}
+      t={dict.dashboard}
+      tActivity={dict.activity}
+      tDocuments={dict.documents}
+      errors={dict.errors}
+      common={dict.common}
+    />
+  );
 }

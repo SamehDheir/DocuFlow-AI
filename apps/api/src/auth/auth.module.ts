@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AuditModule } from '../common/audit/audit.module';
+import { InvitationsModule } from '../invitations/invitations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PermissionsGuard } from './guards/permissions.guard';
 import { JwtMiddleware } from './jwt.middleware';
 import { TokenService } from './token.service';
 
@@ -13,7 +15,7 @@ import { TokenService } from './token.service';
   // Secrets are passed per call in TokenService and JwtMiddleware — the access
   // and refresh halves use different ones, so a module-level default would only
   // be right half the time.
-  imports: [JwtModule.register({}), PermissionsModule, AuditModule],
+  imports: [JwtModule.register({}), PermissionsModule, AuditModule, InvitationsModule],
   controllers: [AuthController],
   providers: [
     AuthService,
@@ -25,6 +27,13 @@ import { TokenService } from './token.service';
      * decorator ends up protected rather than quietly open.
      */
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    /**
+     * Authorisation runs second. Order here IS execution order, and
+     * PermissionsGuard assumes JwtAuthGuard has already established a
+     * principal — reversing the two would ask the database about `undefined`
+     * on every anonymous request.
+     */
+    { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
   /**
    * AppModule applies JwtMiddleware, and Nest instantiates middleware in the

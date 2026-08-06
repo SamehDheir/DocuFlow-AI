@@ -8,6 +8,7 @@
     "showPassword": "إظهار كلمة المرور",
     "hidePassword": "إخفاء كلمة المرور",
     "loading": "جارٍ التحميل",
+    "close": "إغلاق",
     "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
   },
   "panel": {
@@ -16,11 +17,26 @@
     "isolated": "عزل كامل لبيانات كل شركة",
     "versioned": "سجل إصدارات كامل",
     "stages": {
-      "uploaded": { "label": "تم الرفع", "detail": "مُخزَّن في مساحة تخزين مُشفّرة" },
-      "processing": { "label": "المعالجة", "detail": "استخراج الصور المصغّرة والبيانات الوصفية" },
-      "ocr": { "label": "التعرّف الضوئي", "detail": "استخراج النص من الصور والمستندات الممسوحة" },
-      "ai": { "label": "تحليل الذكاء الاصطناعي", "detail": "تلخيص وتصنيف وفهرسة" },
-      "ready": { "label": "جاهز", "detail": "قابل للبحث في مساحة عملك بالكامل" }
+      "uploaded": {
+        "label": "تم الرفع",
+        "detail": "مُخزَّن في مساحة تخزين مُشفّرة"
+      },
+      "processing": {
+        "label": "المعالجة",
+        "detail": "استخراج الصور المصغّرة والبيانات الوصفية"
+      },
+      "ocr": {
+        "label": "التعرّف الضوئي",
+        "detail": "استخراج النص من الصور والمستندات الممسوحة"
+      },
+      "ai": {
+        "label": "تحليل الذكاء الاصطناعي",
+        "detail": "تلخيص وتصنيف وفهرسة"
+      },
+      "ready": {
+        "label": "جاهز",
+        "detail": "قابل للبحث في مساحة عملك بالكامل"
+      }
     }
   },
   "login": {
@@ -110,7 +126,10 @@
     "skipToContent": "تخطَّ إلى المحتوى",
     "account": "الحساب",
     "signOut": "تسجيل الخروج",
-    "restoring": "جارٍ استعادة جلستك"
+    "restoring": "جارٍ استعادة جلستك",
+    "menu": "القائمة",
+    "openMenu": "فتح القائمة",
+    "closeMenu": "إغلاق القائمة"
   },
   "dashboard": {
     "greeting": "أهلاً بعودتك، {name}",
@@ -122,7 +141,8 @@
     "stats": {
       "documents": "المستندات",
       "storage": "المساحة المستخدمة",
-      "members": "أعضاء الفريق"
+      "members": "أعضاء الفريق",
+      "trashed": "في المحذوفات"
     },
     "empty": {
       "badge": "التالي قريباً",
@@ -136,6 +156,11 @@
     "meta": {
       "title": "لوحة التحكم",
       "description": "مساحة عملك في DocuFlow AI."
+    },
+    "recent": {
+      "title": "أحدث المستندات",
+      "empty": "لم يتم رفع أي شيء بعد.",
+      "viewAll": "عرض الكل"
     }
   },
   "notFound": {
@@ -149,10 +174,454 @@
       "description": "الصفحة التي تبحث عنها غير موجودة."
     }
   },
+  "errors": {
+    "PERMISSION_DENIED": "ليس لديك صلاحية للقيام بذلك.",
+    "FOLDER_NOT_FOUND": "هذا المجلد لم يعد موجوداً.",
+    "FOLDER_NAME_TAKEN": "يوجد مجلد بهذا الاسم هنا بالفعل.",
+    "FOLDER_NOT_EMPTY": "لا يزال هذا المجلد يحتوي على عناصر. انقلها أو احذفها أولاً.",
+    "FOLDER_CYCLE": "لا يمكن نقل مجلد إلى داخل نفسه.",
+    "FOLDER_DEPTH_EXCEEDED": "لا يمكن تداخل المجلدات لأعمق من ذلك.",
+    "DOCUMENT_NOT_FOUND": "هذا المستند لم يعد موجوداً.",
+    "DOCUMENT_NOT_DELETED": "هذا المستند ليس في سلة المحذوفات.",
+    "FILE_REQUIRED": "اختر ملفاً أولاً.",
+    "FILE_TOO_LARGE": "حجم هذا الملف أكبر من الحد المسموح به.",
+    "MIME_NOT_ALLOWED": "هذا النوع من الملفات غير مقبول.",
+    "PREVIEW_NOT_AVAILABLE": "لا يمكن معاينة هذا النوع من الملفات.",
+    "STORAGE_UNAVAILABLE": "خدمة التخزين غير متاحة حالياً. حاول مرة أخرى.",
+    "UPLOAD_CANCELLED": "تم إلغاء الرفع.",
+    "DOCUMENT_ALREADY_PROCESSING": "هذا المستند قيد المعالجة بالفعل.",
+    "PROCESSING_UNAVAILABLE": "المعالجة غير متاحة حاليًا. أعد المحاولة بعد قليل.",
+    "SEARCH_QUERY_REQUIRED": "أدخل ما تريد البحث عنه.",
+    "NOTIFICATION_NOT_FOUND": "لم يعد هذا الإشعار موجودًا.",
+    "APPROVAL_NOT_FOUND": "لم يعد طلب الاعتماد موجودًا.",
+    "APPROVAL_ALREADY_PENDING": "يوجد بالفعل طلب اعتماد مفتوح لهذا المستند.",
+    "APPROVAL_ALREADY_DECIDED": "تم البتّ في هذا الطلب بالفعل.",
+    "APPROVAL_SELF_DECISION": "لا يمكنك البتّ في طلبك الخاص.",
+    "APPROVAL_NOT_ASSIGNEE": "هذا الطلب مُسند إلى شخص آخر."
+  },
+  "documents": {
+    "title": "المستندات",
+    "subtitle": "كل ما حفظه فريقك، في مكان واحد.",
+    "searchLabel": "البحث في المستندات",
+    "searchPlaceholder": "ابحث بالاسم",
+    "upload": "رفع",
+    "uploadHint": "أو أفلت الملفات في أي مكان",
+    "newFolder": "مجلد جديد",
+    "allFiles": "كل الملفات",
+    "root": "كل الملفات",
+    "folders": "المجلدات",
+    "countOne": "مستند واحد",
+    "countMany": "{count} مستنداً",
+    "loadMore": "تحميل المزيد",
+    "loadingMore": "جارٍ التحميل",
+    "columns": {
+      "name": "الاسم",
+      "size": "الحجم",
+      "modified": "آخر تعديل",
+      "owner": "المالك",
+      "actions": "إجراءات"
+    },
+    "actions": {
+      "open": "فتح",
+      "download": "تنزيل",
+      "rename": "إعادة تسمية",
+      "delete": "نقل إلى المحذوفات",
+      "restore": "استعادة",
+      "menu": "إجراءات {name}",
+      "reprocess": "إعادة المعالجة",
+      "requestApproval": "اطلب اعتمادًا"
+    },
+    "status": {
+      "UPLOADING": "جارٍ الرفع",
+      "READY": "جاهز",
+      "PROCESSING": "قيد المعالجة",
+      "ARCHIVED": "مؤرشف",
+      "DELETED": "في المحذوفات",
+      "CREATED": "أُنشئ",
+      "UPLOADED": "تم الرفع",
+      "OCR": "قراءة النص",
+      "AI_ANALYSIS": "التحليل"
+    },
+    "empty": {
+      "title": "لا توجد ملفات بعد",
+      "body": "ارفع أول مستند لديك، أو أنشئ مجلداً لتنظيم ما سيأتي."
+    },
+    "emptyFolder": {
+      "title": "هذا المجلد فارغ",
+      "body": "ارفع مستنداً هنا، أو انقل واحداً إليه من مكان آخر."
+    },
+    "emptySearch": {
+      "title": "لا توجد نتائج",
+      "body": "لا شيء هنا يطابق «{query}». جرّب كلمة أقصر أو مختلفة.",
+      "clear": "مسح البحث"
+    },
+    "error": {
+      "title": "تعذّر تحميل المستندات",
+      "retry": "حاول مرة أخرى"
+    },
+    "loading": "جارٍ تحميل المستندات",
+    "meta": {
+      "title": "المستندات",
+      "description": "تصفّح مستنداتك وأدرها."
+    },
+    "preview": {
+      "close": "إغلاق",
+      "loading": "جارٍ تحميل المعاينة…",
+      "textFallback": "لا يمكن عرض هذه الصيغة كصفحة، لذا يظهر النص المستخرَج أدناه. نزِّل الملف للاطلاع على التنسيق الأصلي."
+    },
+    "processing": {
+      "tabs": {
+        "preview": "معاينة",
+        "text": "النص",
+        "summary": "الملخّص",
+        "approval": "الاعتماد"
+      },
+      "pending": "بانتظار المعالجة",
+      "running": "جارٍ المعالجة…",
+      "noText": "تعذّر استخراج أي نص من هذا الملف.",
+      "noSummary": "لا يوجد ملخّص بعد.",
+      "failedText": "فشل استخراج النص.",
+      "failedSummary": "فشل التحليل.",
+      "skipped": "لا يحتوي هذا النوع من الملفات على نص للقراءة.",
+      "pagesRead": "تمت قراءة {count} صفحة",
+      "truncated": "تمت قراءة أول {count} صفحة فقط.",
+      "keywords": "الكلمات المفتاحية",
+      "model": "أُنشئ بواسطة {model}",
+      "reprocess": "إعادة المعالجة",
+      "reprocessing": "جارٍ إعادة المعالجة…",
+      "reprocessed": "تمت جدولة {name} لإعادة المعالجة",
+      "stub": "أُنشئ بواسطة المزوّد التجريبي — أضف مفتاح الذكاء الاصطناعي للتحليل الحقيقي."
+    }
+  },
+  "upload": {
+    "title": "رفع الملفات",
+    "dropTitle": "أفلت للرفع",
+    "dropBody": "حرّر الملفات لإضافتها إلى {folder}.",
+    "choose": "اختر الملفات",
+    "cancel": "إلغاء",
+    "close": "إغلاق",
+    "retry": "إعادة المحاولة",
+    "uploading": "جارٍ رفع {name}",
+    "complete": "تم رفع {name}",
+    "failed": "تعذّر رفع {name}",
+    "progress": "تم رفع {percent}٪",
+    "summaryOne": "تم رفع ملف واحد",
+    "summaryMany": "تم رفع {count} ملفات"
+  },
+  "folders": {
+    "create": "مجلد جديد",
+    "createTitle": "إنشاء مجلد",
+    "nameLabel": "اسم المجلد",
+    "namePlaceholder": "مثال: العقود",
+    "submit": "إنشاء المجلد",
+    "cancel": "إلغاء",
+    "renameTitle": "إعادة تسمية المجلد",
+    "renameSubmit": "حفظ الاسم",
+    "deleteAria": "حذف المجلد {name}",
+    "deleteTitle": "حذف هذا المجلد؟",
+    "deleteBody": "سيتم حذف «{name}». لا يمكن التراجع عن هذا.",
+    "deleteSubmit": "حذف المجلد",
+    "created": "تم إنشاء المجلد «{name}»",
+    "renamed": "تم تغيير اسم المجلد",
+    "deleted": "تم حذف المجلد",
+    "errors": {
+      "required": "أعطِ المجلد اسماً",
+      "tooLong": "اجعله أقل من ١٢٠ حرفاً"
+    }
+  },
+  "trash": {
+    "title": "سلة المحذوفات",
+    "subtitle": "تبقى المستندات المحذوفة هنا حتى تستعيدها.",
+    "restore": "استعادة",
+    "restored": "تمت استعادة «{name}»",
+    "empty": {
+      "title": "سلة المحذوفات فارغة",
+      "body": "ستظهر هنا المستندات التي تحذفها."
+    },
+    "meta": {
+      "title": "سلة المحذوفات",
+      "description": "استعادة المستندات المحذوفة."
+    }
+  },
+  "confirm": {
+    "deleteDocumentTitle": "النقل إلى المحذوفات؟",
+    "deleteDocumentBody": "يمكن استعادة «{name}» من سلة المحذوفات لاحقاً.",
+    "deleteDocumentSubmit": "نقل إلى المحذوفات",
+    "cancel": "إلغاء"
+  },
   "meta": {
     "siteName": "DocuFlow AI",
     "titleTemplate": "%s · DocuFlow AI",
     "defaultTitle": "DocuFlow AI",
     "description": "إدارة مستندات للشركات مدعومة بالذكاء الاصطناعي — مستودع واحد آمن، وسجل إصدارات كامل، وإجابات مستخرجة من ملفاتك."
+  },
+  "activity": {
+    "title": "النشاط",
+    "subtitle": "كل تغيير جرى في مساحة العمل، الأحدث أولاً.",
+    "viewAll": "عرض الكل",
+    "loadMore": "تحميل المزيد",
+    "loading": "جارٍ تحميل النشاط",
+    "system": "النظام",
+    "filters": {
+      "action": "الإجراء",
+      "allActions": "كل الإجراءات",
+      "entity": "النوع",
+      "allEntities": "كل الأنواع",
+      "clear": "مسح عوامل التصفية"
+    },
+    "entities": {
+      "Document": "المستندات",
+      "Folder": "المجلدات",
+      "User": "الأشخاص",
+      "Company": "مساحة العمل",
+      "RefreshToken": "الجلسات",
+      "ApprovalRequest": "اعتماد",
+      "Notification": "إشعار"
+    },
+    "empty": {
+      "title": "لم يحدث شيء بعد",
+      "body": "عمليات الرفع وإعادة التسمية والحذف ستظهر هنا فور حدوثها."
+    },
+    "emptyFiltered": {
+      "title": "لا نشاط مطابق",
+      "body": "لا توجد سجلات تطابق عوامل التصفية المختارة."
+    },
+    "error": {
+      "title": "تعذّر تحميل النشاط",
+      "retry": "إعادة المحاولة"
+    },
+    "meta": {
+      "title": "النشاط",
+      "description": "سجل التدقيق الخاص بمساحة عملك."
+    },
+    "actions": {
+      "auth.register": "أنشأ مساحة العمل",
+      "auth.login": "سجّل الدخول",
+      "auth.login_failed": "فشلت محاولة تسجيل دخوله",
+      "auth.login_blocked": "مُنع من تسجيل الدخول",
+      "auth.logout": "سجّل الخروج",
+      "auth.password_reset_requested": "طلب إعادة تعيين كلمة المرور",
+      "auth.password_reset_completed": "أعاد تعيين كلمة المرور",
+      "auth.refresh_reuse_detected": "أُلغيت جلسته بسبب إعادة استخدام رمز",
+      "document.upload": "رفع مستنداً",
+      "document.rename": "أعاد تسمية مستند",
+      "document.move": "نقل مستنداً",
+      "document.delete": "نقل مستنداً إلى المحذوفات",
+      "document.restore": "استعاد مستنداً",
+      "document.download": "نزّل مستنداً",
+      "document.preview": "عاين مستنداً",
+      "folder.create": "أنشأ مجلداً",
+      "folder.rename": "أعاد تسمية مجلد",
+      "folder.move": "نقل مجلداً",
+      "folder.delete": "حذف مجلداً",
+      "document.process": "عالج مستندًا",
+      "document.reprocess": "أعاد معالجة مستند",
+      "document.reprocess.request": "طلب إعادة المعالجة",
+      "approval.request": "طلب اعتمادًا",
+      "approval.approve": "اعتمد مستندًا",
+      "approval.reject": "رفض مستندًا",
+      "approval.cancel": "سحب طلب اعتماد"
+    }
+  },
+  "notifications": {
+    "title": "الإشعارات",
+    "aria": "الإشعارات",
+    "ariaWithCount": "الإشعارات، {count} غير مقروء",
+    "markAllRead": "تعليم الكل كمقروء",
+    "empty": "لا يوجد جديد",
+    "retry": "أعد المحاولة",
+    "viewActivity": "عرض كل النشاط",
+    "system": "النظام",
+    "types": {
+      "DOCUMENT_READY": "انتهت معالجة {name}",
+      "DOCUMENT_FAILED": "تعذّرت معالجة {name}",
+      "APPROVAL_REQUESTED": "طلب منك {actor} اعتماد {name}",
+      "APPROVAL_APPROVED": "اعتمد {actor} المستند {name}",
+      "APPROVAL_REJECTED": "رفض {actor} المستند {name}",
+      "APPROVAL_CANCELLED": "سحب {actor} طلب اعتماد {name}"
+    }
+  },
+  "search": {
+    "title": "البحث",
+    "subtitle": "ابحث داخل محتوى مستنداتك، لا في أسمائها فقط.",
+    "label": "ابحث في المستندات",
+    "placeholder": "جرّب عبارة من داخل مستند…",
+    "hint": "يبحث في النص المستخرج والملخّصات والكلمات المفتاحية وأسماء الملفات.",
+    "submit": "ابحث",
+    "resultsOne": "نتيجة واحدة",
+    "resultsMany": "{count} نتيجة",
+    "loadMore": "تحميل المزيد",
+    "loading": "جارٍ البحث…",
+    "idle": {
+      "title": "ابحث في أرشيفك",
+      "body": "كل مستند تمت معالجته قابل للبحث داخل محتواه، بما في ذلك المستندات الممسوحة ضوئيًا."
+    },
+    "empty": {
+      "title": "لا توجد نتائج",
+      "body": "لا شيء يطابق «{query}». جرّب كلمات أقل، أو تأكّد من انتهاء معالجة المستند."
+    },
+    "error": {
+      "title": "فشل البحث",
+      "retry": "أعد المحاولة"
+    },
+    "filters": {
+      "type": "نوع الملف",
+      "allTypes": "كل الأنواع"
+    },
+    "meta": {
+      "title": "البحث",
+      "description": "ابحث داخل محتوى المستندات في مساحة عملك."
+    }
+  },
+  "approvals": {
+    "title": "الاعتمادات",
+    "subtitle": "أرسل مستندًا للاعتماد وتابع القرار.",
+    "tabs": {
+      "waiting": "بانتظارك",
+      "raised": "طلباتك",
+      "all": "الكل"
+    },
+    "status": {
+      "PENDING": "قيد الانتظار",
+      "APPROVED": "معتمد",
+      "REJECTED": "مرفوض",
+      "CANCELLED": "مسحوب"
+    },
+    "request": "اطلب اعتمادًا",
+    "requestTitle": "طلب اعتماد {name}",
+    "requestDescription": "عيّن شخصًا محددًا، أو اتركه مفتوحًا لأي شخص لديه صلاحية الاعتماد.",
+    "assigneeLabel": "أسنِد إلى",
+    "anyApprover": "أي شخص لديه صلاحية الاعتماد",
+    "noteLabel": "ملاحظة",
+    "notePlaceholder": "ما الذي ينبغي مراجعته؟",
+    "submit": "أرسل الطلب",
+    "cancel": "إلغاء",
+    "approve": "اعتماد",
+    "reject": "رفض",
+    "withdraw": "سحب",
+    "decisionTitle": "{decision} {name}؟",
+    "decisionNoteLabel": "السبب (اختياري)",
+    "requestedBy": "طلبه {name}",
+    "assignedTo": "مُسند إلى {name}",
+    "openToAnyone": "مفتوح لأي معتمِد",
+    "decidedBy": "قرّره {name}",
+    "requested": "تم طلب اعتماد {name}",
+    "approved": "تم اعتماد {name}",
+    "rejected": "تم رفض {name}",
+    "withdrawn": "تم سحب الطلب",
+    "loadMore": "تحميل المزيد",
+    "loading": "جارٍ تحميل الاعتمادات…",
+    "empty": {
+      "title": "لا يوجد ما يحتاج اعتمادًا",
+      "body": "ستظهر هنا الطلبات المُرسلة إليك."
+    },
+    "emptyRaised": {
+      "title": "لم تطلب أي اعتماد بعد",
+      "body": "افتح مستندًا واطلب الاعتماد لبدء طلب جديد."
+    },
+    "error": {
+      "title": "تعذّر تحميل الاعتمادات",
+      "retry": "أعد المحاولة"
+    },
+    "meta": {
+      "title": "الاعتمادات",
+      "description": "طلبات اعتماد المستندات وقراراتها."
+    }
+  },
+  "members": {
+    "title": "الأعضاء",
+    "subtitle": "من يصل إلى مساحة العمل هذه، وما الذي يستطيع كلٌّ منهم فعله.",
+    "tabs": {
+      "members": "الأعضاء",
+      "invitations": "الدعوات"
+    },
+    "loading": "جارٍ تحميل الأعضاء",
+    "columns": {
+      "name": "الاسم",
+      "role": "الدور",
+      "joined": "تاريخ الانضمام"
+    },
+    "you": "أنت",
+    "deactivated": "معطَّل",
+    "roleLabel": "الدور",
+    "changeRole": "تغيير دور {name}",
+    "roleChanged": "{name} أصبح {role}",
+    "countOne": "عضو واحد",
+    "countMany": "{count} أعضاء",
+    "empty": {
+      "title": "لا أحد غيرك بعد",
+      "body": "ادعُ زميلاً وسيظهر هنا."
+    },
+    "error": {
+      "title": "تعذّر تحميل الأعضاء",
+      "retry": "أعد المحاولة"
+    },
+    "invite": {
+      "action": "ادعُ شخصاً",
+      "title": "ادعُ شخصاً",
+      "description": "سينضم إلى مساحة العمل بالدور الذي تختاره.",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "colleague@company.com",
+      "roleLabel": "الدور",
+      "submit": "إنشاء الدعوة",
+      "cancel": "إلغاء",
+      "created": "أُنشئت دعوة لـ {email}",
+      "linkTitle": "شارك هذا الرابط",
+      "linkBody": "لا يوجد إرسال بريد مُهيّأ، فأرسل الرابط بنفسك إلى {email}. يعمل مرة واحدة وينتهي خلال سبعة أيام.",
+      "copy": "انسخ الرابط",
+      "copied": "نُسخ الرابط",
+      "done": "تم"
+    },
+    "invitations": {
+      "empty": {
+        "title": "لا توجد دعوات",
+        "body": "ستُدرج هنا الدعوات التي تنشئها."
+      },
+      "loading": "جارٍ تحميل الدعوات",
+      "columns": {
+        "email": "البريد الإلكتروني",
+        "role": "الدور",
+        "status": "الحالة",
+        "invitedBy": "الداعي"
+      },
+      "status": {
+        "PENDING": "معلَّقة",
+        "ACCEPTED": "مقبولة",
+        "REVOKED": "ملغاة",
+        "EXPIRED": "منتهية"
+      },
+      "expires": "تنتهي {when}",
+      "revoke": "إلغاء",
+      "revoked": "أُلغيت الدعوة",
+      "revokeTitle": "إلغاء هذه الدعوة؟",
+      "revokeBody": "سيتوقف الرابط المُرسل إلى {email} عن العمل فوراً.",
+      "revokeSubmit": "إلغاء الدعوة",
+      "countOne": "دعوة واحدة",
+      "countMany": "{count} دعوات"
+    },
+    "meta": {
+      "title": "الأعضاء",
+      "description": "ادعُ زملاءك وأدر ما يستطيعون فعله."
+    }
+  },
+  "invite": {
+    "title": "انضم إلى {company}",
+    "subtitle": "دُعيت للانضمام إلى {company} بدور {role}.",
+    "checking": "جارٍ التحقق من دعوتك",
+    "emailLabel": "البريد الإلكتروني",
+    "emailHint": "هذا هو العنوان الذي أُرسلت إليه الدعوة ولا يمكن تغييره.",
+    "firstNameLabel": "الاسم الأول",
+    "lastNameLabel": "اسم العائلة",
+    "passwordLabel": "كلمة المرور",
+    "submit": "إنشاء الحساب",
+    "invalid": {
+      "title": "لا يمكن استخدام هذه الدعوة",
+      "body": "ربما انتهت صلاحيتها أو أُلغيت أو استُخدمت من قبل. اطلب رابطاً جديداً ممن دعاك.",
+      "action": "اذهب إلى تسجيل الدخول"
+    },
+    "meta": {
+      "title": "اقبل دعوتك",
+      "description": "انضم إلى مساحة عمل في DocuFlow AI دُعيت إليها."
+    }
   }
 }

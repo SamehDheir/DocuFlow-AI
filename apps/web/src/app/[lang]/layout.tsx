@@ -111,10 +111,10 @@ export const viewport: Viewport = {
 /**
  * Applies the stored theme before first paint.
  *
- * Must run synchronously in <head>: doing it in an effect means the browser
- * paints the system theme first and then repaints, a visible flash for anyone
- * who chose dark. try/catch because localStorage throws outright in some
- * privacy modes.
+ * Must run synchronously during parse, ahead of any content: doing it in an
+ * effect means the browser paints the system theme first and then repaints, a
+ * visible flash for anyone who chose dark. try/catch because localStorage
+ * throws outright in some privacy modes.
  */
 const THEME_BOOT = `
 try {
@@ -150,14 +150,32 @@ export default async function RootLayout({
       data-scroll-behavior="smooth"
       className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable} ${plexArabic.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
-      </head>
       {/* Extensions such as Grammarly and password managers inject attributes
           onto <body> before React hydrates, which React reports as a mismatch
           against markup that is in fact identical. suppressHydrationWarning does
           not cascade from <html>, so it is repeated here. */}
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
+        {/*
+          THE FIRST THING IN <body>, and it has to stay there.
+
+          It must execute during HTML parse, before the first paint, or every
+          cold load flashes light before switching to dark. That rules out
+          next/script: for an inline script even `beforeInteractive` defers to
+          Next's own loader queue (`__next_s`), which runs after paint and puts
+          the flash straight back.
+
+          Why body and not html: `<script>` is not a permitted child of <html> —
+          only <head> and <body> are. React 19 used to hoist a stray one into
+          <head>, so this sat directly under <html> and worked; Next 16 no
+          longer does, and reported it as both an ordering warning and a
+          hydration error. As the opening child of <body> it is valid HTML and
+          still runs before any content is painted, because <head> (and the
+          stylesheet) is already parsed and nothing below has rendered yet.
+          document.documentElement exists by this point, so the attribute lands
+          on the element the CSS is keyed to.
+        */}
+        <script id="docuflow-theme-boot" dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

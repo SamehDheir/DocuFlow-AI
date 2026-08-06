@@ -58,10 +58,14 @@
   --accent-subtle: oklch(0.96 0.028 62);
   --accent-border: oklch(0.85 0.062 58);
 
+  /* Each status carries a border to match `danger`, so a bordered chip can be
+     built in any of the three tones without reaching for a one-off value. */
   --success: oklch(0.53 0.108 155);
   --success-subtle: oklch(0.955 0.03 155);
+  --success-border: oklch(0.845 0.08 155);
   --warning: oklch(0.66 0.135 90);
   --warning-subtle: oklch(0.966 0.042 90);
+  --warning-border: oklch(0.845 0.08 90);
   --danger: oklch(0.535 0.185 20);
   --danger-subtle: oklch(0.962 0.03 20);
   --danger-border: oklch(0.845 0.08 20);
@@ -114,8 +118,10 @@
 
     --success: oklch(0.735 0.135 155);
     --success-subtle: oklch(0.268 0.05 155);
+    --success-border: oklch(0.445 0.115 155);
     --warning: oklch(0.83 0.145 92);
     --warning-subtle: oklch(0.3 0.06 92);
+    --warning-border: oklch(0.445 0.115 92);
     --danger: oklch(0.7 0.17 20);
     --danger-subtle: oklch(0.295 0.075 20);
     --danger-border: oklch(0.445 0.115 20);
@@ -150,8 +156,10 @@
 
   --success: oklch(0.735 0.135 155);
   --success-subtle: oklch(0.268 0.05 155);
+  --success-border: oklch(0.445 0.115 155);
   --warning: oklch(0.83 0.145 92);
   --warning-subtle: oklch(0.3 0.06 92);
+  --warning-border: oklch(0.445 0.115 92);
   --danger: oklch(0.7 0.17 20);
   --danger-subtle: oklch(0.295 0.075 20);
   --danger-border: oklch(0.445 0.115 20);
@@ -190,8 +198,10 @@
 
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
+  --color-success-border: var(--success-border);
   --color-warning: var(--warning);
   --color-warning-subtle: var(--warning-subtle);
+  --color-warning-border: var(--warning-border);
   --color-danger: var(--danger);
   --color-danger-subtle: var(--danger-subtle);
   --color-danger-border: var(--danger-border);
@@ -212,6 +222,11 @@
   /* A deliberately non-linear scale. Even 1.25-ratio steps are part of why
    * generated layouts read as flat — real hierarchy needs bigger jumps at the
    * display end and finer control at the UI end. */
+  /* Below 2xs is badge territory — avatar initials, unread counts, file-type
+   * chips. It exists so those stop being written as arbitrary values; three
+   * different hand-picked sizes had already accumulated across four files. */
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
@@ -368,6 +383,32 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * Tailwind 4 dropped `cursor: pointer` on buttons from its preflight, so
+   * every button in the app inherited the arrow and nothing looked clickable.
+   * Restored here rather than as a utility on each control, because the ones
+   * that would get forgotten are exactly the ones users notice.
+   *
+   * `:disabled` keeps the arrow, and a busy control gets the wait cursor —
+   * both are the state saying so, not decoration.
+   */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  label[for],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  [aria-busy='true'] {
+    cursor: progress;
   }
 
   /* One focus treatment everywhere. Never remove it — keyboard users lose the

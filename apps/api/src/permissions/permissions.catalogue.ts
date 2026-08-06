@@ -17,6 +17,14 @@ export const PERMISSIONS = [
   { name: 'documents.update', module: 'documents', description: 'Rename, move, and re-tag' },
   { name: 'documents.delete', module: 'documents', description: 'Move documents to trash' },
   { name: 'documents.restore', module: 'documents', description: 'Restore deleted documents' },
+  /**
+   * Deciding an approval, not requesting one. Asking for sign-off is part of
+   * ordinary document work and rides on `documents.update`; granting it is the
+   * privileged half, so it is separate and withheld from Member.
+   */
+  { name: 'documents.approve', module: 'documents', description: 'Approve or reject documents' },
+
+  { name: 'search.read', module: 'search', description: 'Search document contents' },
 
   { name: 'folders.create', module: 'folders', description: 'Create folders' },
   { name: 'folders.read', module: 'folders', description: 'Browse the folder tree' },
@@ -61,6 +69,11 @@ export const DEFAULT_ROLES = [
   {
     name: 'Member',
     description: 'Works with documents and folders.',
+    /**
+     * Notably absent: `documents.approve`. A Member can request sign-off — that
+     * rides on `documents.update` — but approving your own request would make
+     * the whole workflow decorative.
+     */
     permissions: [
       'documents.create',
       'documents.read',
@@ -69,6 +82,7 @@ export const DEFAULT_ROLES = [
       'folders.create',
       'folders.read',
       'users.read',
+      'search.read',
     ] as PermissionName[],
   },
 ] as const;
