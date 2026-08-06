@@ -8,6 +8,7 @@
     "showPassword": "إظهار كلمة المرور",
     "hidePassword": "إخفاء كلمة المرور",
     "loading": "جارٍ التحميل",
+    "close": "إغلاق",
     "genericError": "حدث خطأ ما. يرجى المحاولة مرة أخرى."
   },
   "panel": {
@@ -125,7 +126,10 @@
     "skipToContent": "تخطَّ إلى المحتوى",
     "account": "الحساب",
     "signOut": "تسجيل الخروج",
-    "restoring": "جارٍ استعادة جلستك"
+    "restoring": "جارٍ استعادة جلستك",
+    "menu": "القائمة",
+    "openMenu": "فتح القائمة",
+    "closeMenu": "إغلاق القائمة"
   },
   "dashboard": {
     "greeting": "أهلاً بعودتك، {name}",

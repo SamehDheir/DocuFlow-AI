@@ -73,10 +73,26 @@ export function ApprovalsView({
   } | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * Set for any fetch after the first. The list below deliberately keeps the
+   * previous tab's rows on screen while the next ones arrive, which is right —
+   * but with no cue at all a slow connection looks like a tab that did not
+   * respond to being pressed.
+   */
+  const [refetching, setRefetching] = useState(false);
 
   /** Bumped to refetch — by the retry button and by live approval events. */
   const [reloadKey, setReloadKey] = useState(0);
-  const refresh = useCallback(() => setReloadKey((key) => key + 1), []);
+  const refresh = useCallback(() => {
+    setRefetching(true);
+    setReloadKey((key) => key + 1);
+  }, []);
+
+  /** Raises the dim before the request goes out, in the handler that causes it. */
+  const selectTab = useCallback((next: Tab) => {
+    setRefetching(true);
+    setTab(next);
+  }, []);
 
   /**
    * Inline rather than a `useCallback` the effect calls, so every setState
@@ -111,6 +127,10 @@ export function ApprovalsView({
 
         setMessage(errorMessage(error, errors, common.genericError));
         setLoad('error');
+      } finally {
+        if (current) {
+          setRefetching(false);
+        }
       }
     })();
 
@@ -205,7 +225,7 @@ export function ApprovalsView({
           idBase={tabsId}
           label={t.title}
           value={tab}
-          onChange={setTab}
+          onChange={selectTab}
           items={[
             { value: 'waiting', label: t.tabs.waiting },
             { value: 'raised', label: t.tabs.raised },
@@ -236,7 +256,15 @@ export function ApprovalsView({
           ) : items.length === 0 ? (
             <EmptyState icon={<DocumentGlyph />} title={empty.title} body={empty.body} />
           ) : (
-            <>
+            /*
+             * Opacity only, so there is nothing to strip for reduced motion —
+             * the rows stay exactly where they are and simply recede while the
+             * next tab's answer is in flight.
+             */
+            <div
+              aria-busy={refetching}
+              className={refetching ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+            >
               <ul className="flex flex-col gap-3">
                 <AnimatePresence initial={false}>
                   {items.map((request) => (
@@ -263,7 +291,7 @@ export function ApprovalsView({
                   </Button>
                 </div>
               ) : null}
-            </>
+            </div>
           )}
         </TabPanel>
       </motion.section>

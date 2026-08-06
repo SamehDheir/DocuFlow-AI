@@ -233,9 +233,15 @@ export function DashboardView({
         ) : (
           <ul className="divide-y divide-border">
             {recent.map((item) => (
-              <li key={item.id} className="flex items-center gap-3 px-5 py-3">
+              // Hover on the row, not just the filename: the icon and the size
+              // are inside the target too, and a row that highlights only under
+              // 14 characters of text does not read as one.
+              <li
+                key={item.id}
+                className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-surface-inset/60"
+              >
                 <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-inset text-[0.5rem] font-medium uppercase text-text-subtle"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-inset text-3xs font-medium uppercase text-text-subtle"
                   aria-hidden="true"
                 >
                   {item.extension.slice(0, 4)}

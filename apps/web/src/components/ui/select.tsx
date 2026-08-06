@@ -47,6 +47,9 @@ export function Select({
             // properties, so it mirrors in Arabic rather than colliding.
             'ps-3 pe-9 text-sm',
             'focus-visible:ring-focus focus-visible:ring-2 focus-visible:outline-none',
+            // A disabled select is usually one still waiting for its options,
+            // so it has to look unavailable rather than merely unresponsive.
+            'disabled:cursor-not-allowed disabled:opacity-60',
             // Hides the platform arrow so the one below is the only one drawn.
             'appearance-none',
             className,

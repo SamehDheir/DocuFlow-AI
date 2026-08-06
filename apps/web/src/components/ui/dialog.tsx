@@ -1,13 +1,10 @@
 'use client';
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useId, useRef } from 'react';
+import { useId, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { DURATION, EASE } from '@/lib/motion';
-
-/** Elements that can hold focus, for the trap below. */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { useModalBehavior } from '@/lib/use-modal-behavior';
 
 /**
  * A modal dialog with a real focus trap.
@@ -18,7 +15,8 @@ const FOCUSABLE =
  * walk behind the dialog and press a button the user cannot see.
  *
  * On close, focus returns to whatever opened it, so a keyboard user is not
- * dumped back at the top of the document.
+ * dumped back at the top of the document. All of that lives in
+ * `useModalBehavior`, which Drawer shares.
  */
 /**
  * Panel widths. `lg` exists for the document preview, where a form-sized modal
@@ -48,60 +46,10 @@ export function Dialog({
 }) {
   const reduced = useReducedMotion();
   const panel = useRef<HTMLDivElement>(null);
-  const restoreTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descriptionId = useId();
 
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-
-      if (event.key !== 'Tab' || !panel.current) return;
-
-      const focusable = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      // Wrap in both directions rather than letting focus escape the panel.
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    },
-    [onClose],
-  );
-
-  useEffect(() => {
-    if (!open) return;
-
-    restoreTo.current = document.activeElement as HTMLElement | null;
-    document.addEventListener('keydown', handleKeyDown);
-
-    // The page behind must not scroll while a modal is over it.
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    // Focus the first control, not the panel, so the reader lands somewhere
-    // actionable.
-    const focusable = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
-    focusable?.focus();
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      restoreTo.current?.focus();
-    };
-  }, [open, handleKeyDown]);
+  useModalBehavior({ open, onClose, panel });
 
   return (
     <AnimatePresence>

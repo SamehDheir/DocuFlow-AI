@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
+import { Menu, originFromContextMenu, type MenuOrigin } from '@/components/ui/menu';
 import { cn } from '@/lib/cn';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
@@ -82,6 +83,14 @@ export function FolderTree({
   // being interpolated as a bare JS number.
   const number = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
+  /**
+   * Right-click target, if any. One menu for the whole tree rather than one per
+   * row: only ever one can be open, and forty folders would otherwise mean
+   * forty portals and forty sets of dismiss listeners.
+   */
+  const [context, setContext] = useState<{ folder: Folder; origin: MenuOrigin } | null>(null);
+  const menuId = useId();
+
   return (
     <nav aria-label={t.folders} className="flex flex-col gap-0.5">
       <button
@@ -105,7 +114,17 @@ export function FolderTree({
          * recover from it unpredictably. The wrapper carries the hover state
          * both children react to.
          */
-        <div key={node.id} className="group relative flex items-center">
+        <div
+          key={node.id}
+          onContextMenu={(event) => {
+            const origin = originFromContextMenu(event, event.currentTarget);
+            if (!origin) return;
+
+            event.preventDefault();
+            setContext({ folder: node, origin });
+          }}
+          className="group relative flex items-center"
+        >
           <button
             type="button"
             onClick={() => onSelect(node.id)}
@@ -142,7 +161,9 @@ export function FolderTree({
               className={cn(
                 'ms-auto shrink-0 text-xs tabular-nums transition-opacity',
                 selectedId === node.id ? 'text-accent/70' : 'text-text-subtle',
-                onDelete ? 'group-hover:opacity-0 group-focus-within:opacity-0' : '',
+                onDelete
+                  ? 'group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0'
+                  : '',
               )}
             >
               {number.format(node.documentCount)}
@@ -160,6 +181,13 @@ export function FolderTree({
              * Hidden until hover, but never hidden from the keyboard:
              * `focus-visible:opacity-100` brings it back the moment it is
              * tabbed to, so the action is reachable without a pointer.
+             *
+             * `pointer-coarse:` is the touch case. A finger has no hover state,
+             * so on a phone or tablet the reveal never fires and the control is
+             * simply unreachable — tapping the row selects the folder instead.
+             * Where the pointer is coarse the button is therefore always
+             * visible, which also means the document count it displaces
+             * (`pointer-coarse:opacity-0` on the count, above) yields there too.
              */
             <button
               type="button"
@@ -168,6 +196,7 @@ export function FolderTree({
                 'text-text-subtle hover:bg-danger-subtle hover:text-danger focus-visible:opacity-100',
                 'absolute inset-e-1 flex size-6 shrink-0 items-center justify-center rounded-md',
                 'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+                'pointer-coarse:opacity-100',
               )}
             >
               <span className="sr-only">
@@ -189,6 +218,37 @@ export function FolderTree({
           ) : null}
         </div>
       ))}
+
+      {/*
+        The same accelerator the document list offers. It matters more here:
+        delete is revealed by hover, so on a trackpad it is discoverable only by
+        accident, and a right-click is where most people look for it first.
+      */}
+      {context ? (
+        <Menu
+          id={menuId}
+          origin={context.origin}
+          onClose={() => setContext(null)}
+          label={context.folder.name}
+          actions={[
+            {
+              key: 'open',
+              label: t.actions.open,
+              onSelect: () => onSelect(context.folder.id),
+            },
+            ...(onDelete
+              ? [
+                  {
+                    key: 'delete',
+                    label: tFolders.deleteSubmit,
+                    tone: 'danger' as const,
+                    onSelect: () => onDelete(context.folder),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ) : null}
     </nav>
   );
 }

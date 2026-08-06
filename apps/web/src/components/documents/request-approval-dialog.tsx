@@ -41,6 +41,13 @@ export function RequestApprovalDialog({
   const [assigneeId, setAssigneeId] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * True until the member list settles. Without it the select shows "Any
+   * approver" alone for a beat, which does not read as loading — it reads as a
+   * company with no other members, and the reader picks the default and moves
+   * on before the real options arrive.
+   */
+  const [loadingMembers, setLoadingMembers] = useState(true);
 
   /**
    * No field resets here. The parent gives this component a `key` per document,
@@ -60,6 +67,8 @@ export function RequestApprovalDialog({
       } catch {
         // A failed member list is not fatal: the request can still be sent
         // unassigned, which is the default anyway.
+      } finally {
+        setLoadingMembers(false);
       }
     })();
   }, [item, withToken]);
@@ -109,9 +118,11 @@ export function RequestApprovalDialog({
         <Select
           label={t.assigneeLabel}
           value={assigneeId}
+          disabled={loadingMembers}
+          aria-busy={loadingMembers}
           onChange={(event) => setAssigneeId(event.target.value)}
         >
-          <option value="">{t.anyApprover}</option>
+          <option value="">{loadingMembers ? common.loading : t.anyApprover}</option>
           {members
             // Assigning to yourself is pointless: the API refuses a
             // self-decision, so the request would be unresolvable by its own

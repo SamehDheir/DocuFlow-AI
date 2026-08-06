@@ -222,6 +222,11 @@
   /* A deliberately non-linear scale. Even 1.25-ratio steps are part of why
    * generated layouts read as flat — real hierarchy needs bigger jumps at the
    * display end and finer control at the UI end. */
+  /* Below 2xs is badge territory — avatar initials, unread counts, file-type
+   * chips. It exists so those stop being written as arbitrary values; three
+   * different hand-picked sizes had already accumulated across four files. */
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;

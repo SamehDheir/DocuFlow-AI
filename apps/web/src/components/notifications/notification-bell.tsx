@@ -206,7 +206,7 @@ export function NotificationBell({
               className={cn(
                 'bg-accent text-accent-fg absolute top-0.5 inset-e-0.5',
                 'flex min-w-4 items-center justify-center rounded-full px-1',
-                'text-[0.625rem] leading-4 font-semibold tabular-nums',
+                'text-3xs leading-4 font-semibold tabular-nums',
               )}
             >
               {unread > 99 ? '99+' : unread}

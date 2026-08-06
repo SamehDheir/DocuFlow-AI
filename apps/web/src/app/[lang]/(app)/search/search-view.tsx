@@ -6,7 +6,7 @@ import { useSession } from '@/components/auth/session-provider';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { DocumentStatusBadge } from '@/components/documents/document-status';
 import { Button } from '@/components/ui/button';
-import { EmptyState, DocumentGlyph } from '@/components/ui/empty-state';
+import { EmptyState, DocumentGlyph, SearchGlyph } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import { TextField } from '@/components/ui/text-field';
 import type { Locale } from '@/i18n/config';
@@ -168,7 +168,7 @@ export function SearchView({
 
       <motion.section variants={variants} aria-live="polite">
         {load === 'idle' ? (
-          <EmptyState icon={<DocumentGlyph />} title={t.idle.title} body={t.idle.body} />
+          <EmptyState icon={<SearchGlyph />} title={t.idle.title} body={t.idle.body} />
         ) : load === 'error' ? (
           <div className="border-danger-border bg-danger-subtle rounded-xl border px-6 py-10 text-center">
             <h2 className="font-display text-lg">{t.error.title}</h2>

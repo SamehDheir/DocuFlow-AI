@@ -12,11 +12,12 @@ import { FolderTree } from '@/components/documents/folder-tree';
 import { UploadQueue } from '@/components/documents/upload-queue';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { Drawer } from '@/components/ui/drawer';
 import { DocumentGlyph, EmptyState, FolderGlyph } from '@/components/ui/empty-state';
 import { SkeletonRegion, SkeletonRows } from '@/components/ui/skeleton';
 import { TextField } from '@/components/ui/text-field';
 import { useToast } from '@/components/ui/toast';
-import type { Locale } from '@/i18n/config';
+import { direction, type Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
 import {
@@ -81,6 +82,8 @@ export function DocumentsView({
   const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
   const [previewing, setPreviewing] = useState<DocumentSummary | null>(null);
   const [requestingApproval, setRequestingApproval] = useState<DocumentSummary | null>(null);
+  /** The tablet folder picker — see the trigger beside the toolbar below. */
+  const [browsingFolders, setBrowsingFolders] = useState(false);
 
   /**
    * Patches rows in place as the worker moves each document through the
@@ -304,6 +307,26 @@ export function DocumentsView({
     ? (folders.find((folder) => folder.id === folderId)?.name ?? t.allFiles)
     : t.allFiles;
 
+  /**
+   * One tree, rendered in two places — the desktop sidebar and the drawer that
+   * stands in for it below `lg`. Built here so the two cannot drift apart as
+   * props are added.
+   */
+  const folderTree = (onSelected?: () => void) => (
+    <FolderTree
+      folders={folders}
+      selectedId={folderId}
+      onSelect={(id) => {
+        setFolderId(id);
+        onSelected?.();
+      }}
+      onDelete={setDeletingFolder}
+      locale={lang}
+      t={t}
+      tFolders={tFolders}
+    />
+  );
+
   return (
     <DropZone onFiles={setPendingFiles} folderName={currentFolderName} t={tUpload}>
       <motion.div
@@ -331,6 +354,19 @@ export function DocumentsView({
               type="search"
             />
           </div>
+
+          {/*
+           * The only route to the folder tree below `lg`, where the sidebar is
+           * hidden. Without it a tablet is stuck on "All files" — the filter
+           * exists but nothing can reach it.
+           */}
+          <Button
+            variant="secondary"
+            className="lg:hidden"
+            onClick={() => setBrowsingFolders(true)}
+          >
+            {t.folders}
+          </Button>
 
           <Button onClick={() => filePicker.current?.click()}>{t.upload}</Button>
           <Button variant="secondary" onClick={() => setCreatingFolder(true)}>
@@ -366,17 +402,7 @@ export function DocumentsView({
           variants={respectMotion(riseItem, reduced)}
           className="grid gap-6 lg:grid-cols-[13rem_1fr]"
         >
-          <aside className="hidden lg:block">
-            <FolderTree
-              folders={folders}
-              selectedId={folderId}
-              onSelect={setFolderId}
-              onDelete={setDeletingFolder}
-              locale={lang}
-              t={t}
-              tFolders={tFolders}
-            />
-          </aside>
+          <aside className="hidden lg:block">{folderTree()}</aside>
 
           <section className="min-w-0">
             {load === 'loading' ? (
@@ -471,6 +497,21 @@ export function DocumentsView({
           </section>
         </motion.div>
       </motion.div>
+
+      {/*
+        Closes on selection: picking a folder is the only reason it was opened,
+        and making the reader dismiss it afterwards would turn one decision into
+        two taps.
+      */}
+      <Drawer
+        open={browsingFolders}
+        onClose={() => setBrowsingFolders(false)}
+        title={t.folders}
+        closeLabel={common.close}
+        rtl={direction[lang] === 'rtl'}
+      >
+        {folderTree(() => setBrowsingFolders(false))}
+      </Drawer>
 
       <DocumentPreview
         /**

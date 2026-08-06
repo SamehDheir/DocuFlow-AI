@@ -8,6 +8,7 @@
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "loading": "Loading",
+    "close": "Close",
     "genericError": "Something went wrong. Please try again."
   },
   "panel": {
@@ -125,7 +126,10 @@
     "skipToContent": "Skip to content",
     "account": "Account",
     "signOut": "Sign out",
-    "restoring": "Restoring your session"
+    "restoring": "Restoring your session",
+    "menu": "Menu",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "dashboard": {
     "greeting": "Welcome back, {name}",

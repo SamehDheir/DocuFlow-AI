@@ -37,16 +37,42 @@ export function Skeleton({
 export function SkeletonRegion({
   label,
   className,
+  shimmer = false,
   children,
 }: {
   label: string;
   className?: string;
+  /**
+   * Sends one highlight travelling across the whole region.
+   *
+   * Reserved for full-page loading, where it is the only thing on screen. The
+   * sweep belongs to the region rather than to each bar on purpose: forty bars
+   * shimmering on their own schedules reads as noise, where one pass of light
+   * over the group reads as a single surface catching it. Same technique as the
+   * loading Button, so it is one motion language rather than two.
+   */
+  shimmer?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className={className} aria-busy="true" aria-live="polite">
+    <div
+      className={cn(shimmer && 'relative isolate overflow-hidden', className)}
+      aria-busy="true"
+      aria-live="polite"
+    >
       <span className="sr-only">{label}</span>
       {children}
+
+      {shimmer ? (
+        <span
+          aria-hidden="true"
+          /* surface-raised is lighter than the bars' surface-inset in both
+             themes, so the highlight reads as light in either. Hidden outright
+             under reduced motion rather than merely shortened — a sweep with a
+             collapsed duration is a flash. */
+          className="animate-sweep pointer-events-none absolute inset-y-0 -inset-x-full bg-linear-to-r from-transparent via-surface-raised/70 to-transparent motion-reduce:hidden"
+        />
+      ) : null}
     </div>
   );
 }
