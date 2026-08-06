@@ -8,14 +8,16 @@ npm-workspaces monorepo. **v1 and v2 are both complete end to end.**
 
 | Workspace       | State                                                                                                                                                                                         |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@docuflow/api` | NestJS 11 + Prisma 7. Tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents`, `queue`, `ai`, `search`, `notifications`, `events`, `approvals` modules. |
-| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/search`, `/approvals`, `/trash`, `/activity`.                            |
+| `@docuflow/api` | NestJS 11 + Prisma 7. Tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents`, `queue`, `ai`, `search`, `notifications`, `events`, `approvals`, `users`, `roles`, `invitations` modules. |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/search`, `/approvals`, `/trash`, `/activity`, `/members`.                            |
 | Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Redis now carries the BullMQ queue and the SSE event bus.                                                                          |
-| Database        | Four migrations applied — `init`, `auth_tokens`, `v2_ai_notifications_approvals`, `arabic_search_normalisation`. 17 tables with composite tenant indexes.                                     |
+| Database        | Five migrations applied — `init`, `auth_tokens`, `v2_ai_notifications_approvals`, `arabic_search_normalisation`, `members_and_invitations`. 18 tables with composite tenant indexes.        |
 
-A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash — and now: an upload is text-extracted and summarised on a queue worker, its contents are full-text searchable in Arabic and English, the browser is told live over SSE when it finishes, and a document can be routed for single-step sign-off. Every mutation is audited. **193 unit tests and 65 e2e tests pass.**
+A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash — and now: an upload is text-extracted and summarised on a queue worker, its contents are full-text searchable in Arabic and English, the browser is told live over SSE when it finishes, and a document can be routed for single-step sign-off. Every mutation is audited. **250 unit tests and 65 e2e tests pass.**
 
-v3 is next: mobile app, external API, integrations, billing, enterprise features. See §"v2 as built" for what v2 actually settled.
+**A company can now hold more than its founder.** `register` necessarily creates a new company, so before invitations there was no way to add a second person and the seeded Owner/Admin/Member roles had nobody to apply to. See §"Members, roles and invitations".
+
+Otherwise v3 is next: mobile app, external API, integrations, billing. See §"v2 as built" for what v2 actually settled.
 
 ### Web session handling
 
@@ -106,7 +108,9 @@ Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThro
 
 ## Module Layout
 
-`apps/api/src/` holds `config/`, `common/{tenant,audit,errors,http}/`, `prisma/`, `health/`, `permissions/`, `auth/`, `storage/`, `folders/`, `documents/` (with `extraction/` and `processing/`), `queue/`, `ai/`, `search/`, `notifications/`, `events/`, `approvals/`, `audit/`, and `users/`. Still to be added: `companies`, `roles`.
+`apps/api/src/` holds `config/`, `common/{tenant,audit,errors,http}/`, `prisma/`, `health/`, `permissions/`, `auth/`, `storage/`, `folders/`, `documents/` (with `extraction/` and `processing/`), `queue/`, `ai/`, `search/`, `notifications/`, `events/`, `approvals/`, `audit/`, `users/`, `roles/`, and `invitations/`. Still to be added: `companies`.
+
+**A new tenant-scoped model must be registered in `tenant-guard.ts`.** `TENANT_SCOPED_MODELS` is a hand-kept list, and a model with a `companyId` that is missing from it is not merely unfiltered on read — the guard also stops stamping the company on create, so inserts fail with Prisma demanding a nested `company` connect. `Invitation` shipped without its entry and nothing caught it: it type-checks, it lints, the unit suite passes (services are constructed with fakes and never touch the extension) and the build is clean. `tenant-registration.spec.ts` now parses `schema.prisma` and fails if any model carrying a `companyId` is in neither list.
 
 ### Authorisation
 
@@ -139,7 +143,7 @@ Endpoints: `POST /api/auth/{register,login,refresh,logout,forgot-password,reset-
 - **Access tokens are stateless JWTs; refresh tokens are opaque random strings with a row behind them.** A stateless refresh token cannot be revoked, which would make logout cosmetic. Only an HMAC digest is stored, keyed with `JWT_REFRESH_SECRET`.
 - **Refresh rotates, and replay of a spent token revokes the entire family.** Two parties holding one token is indistinguishable from theft, so the lineage dies and a real sign-in is forced.
 - **Login and forgot-password never reveal whether an account exists** — one error message, a decoy bcrypt comparison to level the timing, and an unconditional 200 from forgot-password.
-- Email is unique **per company**, so one address can exist in several tenants; the password selects the account, oldest wins on a tie. Picking a company explicitly is a v2 concern.
+- Email is unique **per company**, so one address can exist in several tenants; the password selects the account, oldest wins on a tie. Picking a company explicitly at sign-in is still unbuilt — and now reachable, since one person can be invited into a second workspace.
 - No mailer is in the stack. `forgot-password` logs the reset URL in development and withholds it in production.
 
 Two paths are load-bearing and must not drift:
@@ -160,11 +164,26 @@ Concretely:
 
 Avoid the recognisable AI-default tells: stock indigo/violet gradients, a centred hero above three equal feature cards, uniform card grids with no hierarchy, emoji used as iconography, unmodified shadcn defaults, flat spacing with no rhythm, and text that never varies in weight or size.
 
+## Members, roles and invitations
+
+`POST /api/auth/register` always creates a **new** company — it has to, since the tenant does not exist yet — so invitations are the only path by which a workspace gains a second person.
+
+- **Accepting lives in `AuthService`, not `InvitationsService`.** It creates an account and issues a session, which is registration's other half. The company comes from the token; accepting a `companyId` from the body is the obvious cross-tenant hole. `InvitationsService.resolve()` owns the validity rule so previewing and accepting cannot disagree about what "valid" means.
+- **The invitation is consumed by the same statement that checks it is open** — `updateMany` with `acceptedAt: null, revokedAt: null` matches exactly once, so two people racing one forwarded link cannot both get an account.
+- **`Invitation` is shaped after `PasswordResetToken`**: same keyed HMAC digest via `digestToken()`, single use, expiry (7 days). Only the digest is stored.
+- **There is still no mailer**, so `POST /api/invitations` returns the link to the inviter, who delivers it. Withholding the token from the administrator who just created it would make the feature unusable, not safer — they already hold `users.invite`. Development logs it; production does not.
+- **`email` on an invitation is what it was issued *for*, not proof of who accepts.** Anyone holding the link can accept, exactly as with a reset link. The accept form shows the address disabled so it cannot be redirected to someone else.
+- **Preview is `POST /api/invitations/preview` with the token in the body**, not a GET with it in the path — the token is a bearer credential and a path lands in every access log between the browser and the API. Expired, revoked, used and unknown all return one message.
+- **`roles.manage` gates role assignment, not `users.update`.** Editing someone's name and granting them authority are different powers; Admin holds the first and deliberately not the second, or the distinction from Owner would be meaningless. The web reflects this — an Admin sees roles as text where an Owner sees a picker.
+- **The last Owner cannot be demoted.** Owner is the only role holding `roles.manage`, so that edit produces a company nobody can ever administer again, and there is no repair path through the API. The check counts holders rather than trusting the caller not to be the last one.
+- **Role assignment is a whole-set `PUT`**, so it is idempotent and two administrators cannot interleave into a combination neither chose. An empty set is refused: a member with no roles cannot be told apart from a bug, and removing access is what deactivation is for.
+- `/invite` is deliberately **not** in the proxy's `AUTH_ONLY` list. Someone signed in to one company may legitimately hold an invitation to another, and bouncing them to their own dashboard would make that link unusable.
+
 ## Scope Discipline
 
 The spec defines a deliberate MVP. Version 1 is auth (register, login, JWT, refresh, roles), documents (create folder, upload, list, download, delete), and a dashboard (storage usage, recent documents, activity).
 
-v2 is now built: OCR, AI summary, smart search, notifications, approval workflow. Deferred to v3: mobile app, external API, integrations, billing, enterprise features.
+v2 is now built: OCR, AI summary, smart search, notifications, approval workflow. Member management (invitations and role assignment) followed, because the seeded roles had nobody to apply to without it. Deferred: mobile app, external API, integrations, billing.
 
 The approval workflow is **single-step and permission-gated**. The spec routes approvals to a `Department Manager`, a role that does not exist here — `Departments` is unallocated scope with no schema — so it gates on `documents.approve` against the real Owner/Admin/Member roles instead. Sequential approver chains would be a child table, not a reshape.
 
