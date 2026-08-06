@@ -64,7 +64,7 @@ export function ActivityRow({
     <li className="flex items-start gap-3 px-5 py-3">
       <span
         aria-hidden="true"
-        className="bg-surface-inset text-text-subtle border-border mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border text-[0.625rem] font-semibold"
+        className="bg-surface-inset text-text-subtle border-border text-3xs mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border font-semibold"
       >
         {initialsOf(entry, t.system)}
       </span>

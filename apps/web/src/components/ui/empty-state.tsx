@@ -59,6 +59,31 @@ export function FolderGlyph() {
   );
 }
 
+/**
+ * Line-art lens, for "we have not looked yet".
+ *
+ * Search has two zero states that mean opposite things — nothing typed, and
+ * nothing found — and sharing the document glyph made them tell apart only by
+ * reading the paragraph. The icon now carries the distinction.
+ */
+export function SearchGlyph() {
+  return (
+    <svg
+      width="56"
+      height="56"
+      viewBox="0 0 56 56"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      aria-hidden="true"
+    >
+      <circle cx="25" cy="25" r="14" />
+      <path d="M35.2 35.2 47 47" strokeLinecap="round" />
+      <path d="M19 25a6 6 0 0 1 6-6" opacity="0.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** Line-art page, for document-shaped empties. */
 export function DocumentGlyph() {
   return (

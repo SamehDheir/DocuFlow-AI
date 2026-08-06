@@ -15,6 +15,8 @@ const TENANT_SCOPED_MODELS = new Set([
   'AuditLog',
   'RefreshToken',
   'PasswordResetToken',
+  'Notification',
+  'ApprovalRequest',
 ]);
 
 /**
@@ -66,7 +68,19 @@ type QueryArgs = {
  * exactly the bug class this system cannot afford.
  *
  * Use `TenantContextService.runAsSystem()` for the legitimate exceptions
- * (registration, login lookup, platform admin, queue workers).
+ * (registration, login lookup, platform admin), or `runAs()` to bind a specific
+ * company in a queue worker, which has no request to inherit one from.
+ *
+ * LIMITATION — RAW QUERIES ARE NOT COVERED. This extension hooks
+ * `query.$allModels`, which is the model delegate API. `$queryRaw`,
+ * `$queryRawUnsafe` and `$executeRaw` bypass it entirely and are NOT filtered:
+ * they do not name a model, so there is nothing here to intercept.
+ *
+ * Full-text search has to be raw — Prisma cannot express tsvector ranking — so
+ * every statement in SearchService pins `company_id` by hand from
+ * TenantContextService and is covered by a spec that asserts the predicate is
+ * present. Any future raw query must do the same. There is no automatic
+ * protection at this layer to fall back on.
  */
 export function applyTenantGuard(client: PrismaClient, tenant: TenantContextService) {
   return client.$extends({

@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-npm-workspaces monorepo. **The v1 MVP is complete end to end** — auth, storage, folders, documents, and the document UI.
+npm-workspaces monorepo. **v1 and v2 are both complete end to end.**
 
-| Workspace       | State                                                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@docuflow/api` | NestJS 11 + Prisma 7. Env validation, tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents` modules.         |
-| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/trash`.                         |
-| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Verified healthy.                                                                         |
-| Database        | Migrations `init` and `auth_tokens` applied — 15 tables with composite tenant indexes. **No migration was needed for documents**; the schema had it. |
+| Workspace       | State                                                                                                                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@docuflow/api` | NestJS 11 + Prisma 7. Tenant guard, `GET /health`, and the `auth`, `permissions`, `storage`, `folders`, `documents`, `queue`, `ai`, `search`, `notifications`, `events`, `approvals` modules. |
+| `@docuflow/web` | Next.js 16 + Tailwind 4. Design system, Arabic/English i18n, auth screens, and guarded `/dashboard`, `/documents`, `/search`, `/approvals`, `/trash`, `/activity`.                            |
+| Infrastructure  | Postgres 17 (pgvector), Redis 7, MinIO via Docker Compose. Redis now carries the BullMQ queue and the SSE event bus.                                                                          |
+| Database        | Four migrations applied — `init`, `auth_tokens`, `v2_ai_notifications_approvals`, `arabic_search_normalisation`. 17 tables with composite tenant indexes.                                     |
 
-A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash, with every mutation audited. 121 unit tests and 39 e2e tests pass.
+A user can register, create folders, upload files, browse and search them, download, soft-delete, and restore from trash — and now: an upload is text-extracted and summarised on a queue worker, its contents are full-text searchable in Arabic and English, the browser is told live over SSE when it finishes, and a document can be routed for single-step sign-off. Every mutation is audited. **193 unit tests and 65 e2e tests pass.**
 
-The next task is v2: OCR, AI summary, smart search, notifications, approval workflow. See §"v2 seams" at the end of this file for the decisions v1 already made on its behalf.
+v3 is next: mobile app, external API, integrations, billing, enterprise features. See §"v2 as built" for what v2 actually settled.
 
 ### Web session handling
 
@@ -54,11 +54,13 @@ npm run test:e2e --workspace=@docuflow/api    # needs infra up; not run by `npm 
 
 ## Stack (installed, not aspirational)
 
-- **API**: NestJS 11, Prisma 7 + `@prisma/adapter-pg`, `@nestjs/config`, zod 4 (env), class-validator (DTOs), `minio` 8, `multer` 2, jest
+- **API**: NestJS 11, Prisma 7 + `@prisma/adapter-pg`, `@nestjs/config`, zod 4 (env), class-validator (DTOs), `minio` 8, `multer` 2, jest — plus v2: `bullmq` + `ioredis` (queue and SSE bus), `officeparser` (docx/pptx/xlsx/pdf text layers), `pdfjs-dist` + `@napi-rs/canvas` (rasterising scans), `sharp` (image normalisation)
 - **Web**: Next.js 16 (App Router, `src/`), React 19, Tailwind 4, `motion` — no form, icon, data-fetching or component library
 - **Infra**: Postgres 17 via `pgvector/pgvector:pg17`, Redis 7, MinIO
 
-Not yet installed despite appearing in the spec: BullMQ, Swagger, shadcn/ui, TanStack Query, Zustand. Check `package.json` before assuming a library is available. `apps/web` also has **no test runner**, so the CI web test step is currently a silent no-op.
+**No AI SDK is installed, deliberately** — both providers speak the OpenAI wire format, so `ai/openai-compatible.provider.ts` is one `fetch` and a zod parse, and `groq.provider.ts` / `xai.provider.ts` are just configuration on top of it.
+
+Still not installed despite appearing in the spec: Swagger, shadcn/ui, TanStack Query, Zustand. Check `package.json` before assuming a library is available. `apps/web` also has **no test runner**, so the CI web test step is currently a silent no-op.
 
 ### Version traps
 
@@ -104,7 +106,7 @@ Two known limits, documented in the guard itself: `findUnique`/`findUniqueOrThro
 
 ## Module Layout
 
-`apps/api/src/` holds `config/`, `common/{tenant,audit,errors,http}/`, `prisma/`, `health/`, `permissions/`, `auth/`, `storage/`, `folders/`, and `documents/`. Still to be added: `users`, `companies`, `roles`, `ai`, `search`, `notifications`.
+`apps/api/src/` holds `config/`, `common/{tenant,audit,errors,http}/`, `prisma/`, `health/`, `permissions/`, `auth/`, `storage/`, `folders/`, `documents/` (with `extraction/` and `processing/`), `queue/`, `ai/`, `search/`, `notifications/`, `events/`, `approvals/`, `audit/`, and `users/`. Still to be added: `companies`, `roles`.
 
 ### Authorisation
 
@@ -162,7 +164,9 @@ Avoid the recognisable AI-default tells: stock indigo/violet gradients, a centre
 
 The spec defines a deliberate MVP. Version 1 is auth (register, login, JWT, refresh, roles), documents (create folder, upload, list, download, delete), and a dashboard (storage usage, recent documents, activity).
 
-Deferred to v2: OCR, AI summary, smart search, notifications, approval workflow. Deferred to v3: mobile app, external API, integrations, billing, enterprise features.
+v2 is now built: OCR, AI summary, smart search, notifications, approval workflow. Deferred to v3: mobile app, external API, integrations, billing, enterprise features.
+
+The approval workflow is **single-step and permission-gated**. The spec routes approvals to a `Department Manager`, a role that does not exist here — `Departments` is unallocated scope with no schema — so it gates on `documents.approve` against the real Owner/Admin/Member roles instead. Sequential approver chains would be a child table, not a reshape.
 
 Sections 12 and 8 of the spec enumerate the full long-term feature surface (watermarking, encryption, mentions, translation, classification, and so on). Treat those as the roadmap, not the current build target — don't pull v2/v3 features into MVP work unless asked. Do, however, leave room for them in the schema where it is cheap to do so.
 
@@ -172,13 +176,26 @@ Sections 12 and 8 of the spec enumerate the full long-term feature surface (wate
 
 Note the spec's stack section names OpenAI/Gemini for AI and lists modules (`Departments`, `Reports`) that appear in no version plan. The `.env` default is Anthropic, and those two modules are unallocated scope — decide before building either.
 
-## v2 seams
+## v2 as built
 
-Decisions v1 already made on v2's behalf, so nothing has to be unpicked:
+v1 left seams for v2. Two did not survive contact with the available API key, and the corrections matter more than the original plan:
 
-- **Embeddings come from Voyage AI, not Anthropic** — Anthropic ships no embeddings endpoint at all. `VOYAGE_API_KEY` and `EMBEDDING_MODEL` already have optional slots in `env.validation.ts`, so v2 needs no env migration.
-- **OCR is Claude's native document/vision input**, not Tesseract — better on Arabic scans, and it collapses OCR, extraction and classification into one call. Use the Batch API (50%) for bulk backfill.
-- **`DocumentMetadata` is the extension point** for `extractedText`, `summary`, an `embedding vector(1024)` and a `tsvector`. The `vector`, `pg_trgm` and `unaccent` extensions are already installed by `docker/postgres/init/01-extensions.sql`.
-- **Reserve `derived/company_<id>/<documentId>/…`** for thumbnails and OCR page images, so generated artifacts can never collide with originals.
-- **The `status` enum still carries `PROCESSING`, `OCR` and `AI_ANALYSIS`.** v1 goes `UPLOADING → READY` directly; step 4 of the upload pipeline is where v2 hands off to a queue instead.
-- **BullMQ is still not installed**, deliberately — Redis is pinned to `noeviction` for it, but there is no async job until OCR exists.
+- **The provider is Groq, not Anthropic.** `AI_PROVIDER=groq`, over plain `fetch` at `GROQ_BASE_URL`. **Groq is not Grok** — different company, one letter apart. xAI is implemented too (`AI_PROVIDER=xai`); both share `ai/openai-compatible.provider.ts` and differ only by configuration. `anthropic` and `openai` remain in the env enum with no implementation; selecting one logs a warning and falls back to the stub.
+- **Groq needs TWO models.** Its text models reject image content outright (`messages[0].content must be a string`); only the Qwen multimodal model accepts it. So `GROQ_MODEL` does summaries and `GROQ_VISION_MODEL` does OCR. Do not point `GROQ_MODEL` at Qwen: it is a reasoning model, and its preamble breaks Groq's server-side JSON validation, failing every summary with `json_validate_failed`. Blank `GROQ_VISION_MODEL` disables OCR while leaving summaries working — `AiProvider.supportsVision` is how the extractor knows not to rasterise.
+- **No vision model reads PDFs** — images only. So OCR is a dispatch, not a single call: `text/plain` is read directly, PDFs and Office files are parsed for their text layer with `officeparser` (free, exact, zero API calls), and **only a PDF with no text layer** — a real scan — is rasterised to page images with `pdfjs-dist` + `@napi-rs/canvas` and sent to the model. See `documents/extraction/`.
+- **Reasoning models must be muzzled.** Qwen narrates inside `<think>` tags, and that text would be stored as the document's contents and indexed for search. `reasoning_format: 'hidden'` suppresses it — but it is **per-model**, and sending it to a non-reasoning model is a hard 400. The provider discovers this from the vendor's own rejection and caches it, so the config cannot be set up wrongly. `stripReasoning()` is the belt-and-braces.
+- **There are no embeddings.** Neither Groq nor xAI publishes an embeddings endpoint, so `document_metadata.embedding vector(1024)` exists and stays NULL. Search runs on Postgres full text plus `pg_trgm`. Setting `VOYAGE_API_KEY` switches semantic search on with no migration — that is the whole point of the dormant column.
+- **The free tier is the design constraint.** Measured on Groq: 8,000 tokens/min on the vision model against 1,200-3,000 for one page image. Hence `AI_MAX_OCR_PAGES=8` by default, a 429 handler that honours the vendor's own Retry-After, and an OCR loop that **keeps the pages it already read** when a later one fails rather than discarding paid-for work.
+- **`f_normalize()` replaced `f_unaccent()` for search.** Postgres' `unaccent` covers Latin diacritics only and leaves Arabic tashkeel untouched, so `مستند` would not have matched `مُسْتَنَد`. The migration `arabic_search_normalisation` strips tashkeel and folds أإآٱ→ا, ى→ي, ة→ه. **Both the indexing trigger and every query call that one function**, so they cannot drift.
+- **No AI key is a supported configuration.** `NullAiProvider` returns deterministic, input-derived, clearly-labelled output, so the queue, the status transitions, the notifications and the search indexing all run and are all testable without a credential. `aiModel: 'null'` is how the UI knows to say so.
+- **Failure is never terminal for a document.** A failed OCR or summary still ends at `READY` — the bytes uploaded fine and the file must stay downloadable. The failure lives on `ocrStatus`/`aiStatus` instead.
+- **Reserved and now used**: `derived/company_<id>/<documentId>/pages/<n>.png` for rasterised OCR pages.
+
+### Things that will bite
+
+- **`$queryRaw` is NOT covered by the tenant guard.** The guard extends `query.$allModels`; raw SQL names no model. `SearchService` is the only raw query in the system and pins `company_id` by hand from `TenantContextService`, with `search.sql.spec.ts` asserting the predicate is present. Any future raw query must do the same.
+- **A queue worker has no request, so no tenant context.** Use `TenantContextService.runAs(companyId, userId, fn)` — not `runAsSystem()`, which would hand a job for one customer the whole database. The company travels in the job payload.
+- **Enqueue AFTER the transaction commits.** Redis and Postgres share no transaction; a job picked up mid-transaction cannot see the row it names.
+- **`QUEUE_WORKER_ENABLED=false` in the e2e suite.** Each spec file boots its own AppModule, and four workers racing one queue process each other's documents. `processing.e2e-spec.ts` drives the pipeline directly instead. It is also the flag that lets the API scale separately from the workers.
+- **Jest cannot dynamically import ESM** without `--experimental-vm-modules`, so the pdfjs and officeparser paths are unit-tested with mocks and exercised for real only through the `text/plain` path in e2e.
+- **A tsvector/vector column must be declared `Unsupported(...)` in the schema** even though Prisma never touches it, or `migrate dev` diffs it away as a column it cannot see.

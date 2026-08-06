@@ -3,31 +3,37 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
+import { useLiveEvent } from '@/components/providers/live-provider';
 import { DocumentPreview } from '@/components/documents/document-preview';
+import { RequestApprovalDialog } from '@/components/documents/request-approval-dialog';
 import { DocumentRow, type RowAction } from '@/components/documents/document-row';
 import { DropZone } from '@/components/documents/drop-zone';
 import { FolderTree } from '@/components/documents/folder-tree';
 import { UploadQueue } from '@/components/documents/upload-queue';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { Drawer } from '@/components/ui/drawer';
 import { DocumentGlyph, EmptyState, FolderGlyph } from '@/components/ui/empty-state';
 import { SkeletonRegion, SkeletonRows } from '@/components/ui/skeleton';
 import { TextField } from '@/components/ui/text-field';
 import { useToast } from '@/components/ui/toast';
-import type { Locale } from '@/i18n/config';
+import { direction, type Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
 import {
   createFolder,
+  deleteFolder,
   deleteDocument,
-  fetchDocumentBlob,
+  isProcessing,
   listDocuments,
   listFolders,
+  reprocessDocument,
   type DocumentSummary,
   type Folder,
 } from '@/lib/documents';
 import { errorMessage } from '@/lib/error-message';
 import { respectMotion, riseItem, stagger } from '@/lib/motion';
+import { useDocumentDownload } from '@/lib/use-download';
 
 type Load = 'loading' | 'ready' | 'error';
 
@@ -40,6 +46,7 @@ export function DocumentsView({
   tUpload,
   tFolders,
   tConfirm,
+  tApprovals,
   errors,
   common,
 }: {
@@ -48,6 +55,7 @@ export function DocumentsView({
   tUpload: Dictionary['upload'];
   tFolders: Dictionary['folders'];
   tConfirm: Dictionary['confirm'];
+  tApprovals: Dictionary['approvals'];
   errors: Dictionary['errors'];
   common: Dictionary['common'];
 }) {
@@ -71,7 +79,39 @@ export function DocumentsView({
   const [folderName, setFolderName] = useState('');
   const [folderError, setFolderError] = useState<string | undefined>();
   const [confirming, setConfirming] = useState<DocumentSummary | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
   const [previewing, setPreviewing] = useState<DocumentSummary | null>(null);
+  const [requestingApproval, setRequestingApproval] = useState<DocumentSummary | null>(null);
+  /** The tablet folder picker — see the trigger beside the toolbar below. */
+  const [browsingFolders, setBrowsingFolders] = useState(false);
+
+  /**
+   * Patches rows in place as the worker moves each document through the
+   * pipeline. Only the fields the event carries are touched, so a row updated
+   * mid-scroll keeps everything else it already had — and no refetch is issued,
+   * which would reorder the list under the user.
+   */
+  useLiveEvent((event) => {
+    if (event.type !== 'document.status') {
+      return;
+    }
+
+    setDocuments((current) =>
+      current.map((row) =>
+        row.id === event.documentId
+          ? {
+              ...row,
+              status: event.status,
+              metadata: {
+                ocrStatus: event.ocrStatus,
+                aiStatus: event.aiStatus,
+                ocrPages: row.metadata?.ocrPages ?? null,
+              },
+            }
+          : row,
+      ),
+    );
+  });
 
   const filePicker = useRef<HTMLInputElement>(null);
 
@@ -149,19 +189,7 @@ export function DocumentsView({
     }
   };
 
-  const download = async (item: DocumentSummary) => {
-    try {
-      const url = await withToken((token) => fetchDocumentBlob(token, item.id));
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = item.originalName;
-      anchor.click();
-      // Revoked on the next tick, or the blob is pinned for the page's life.
-      setTimeout(() => URL.revokeObjectURL(url), 0);
-    } catch (error) {
-      toast.error(errorMessage(error, errors, common.genericError));
-    }
-  };
+  const download = useDocumentDownload(errors, common);
 
   const confirmDelete = async () => {
     if (!confirming) return;
@@ -174,6 +202,33 @@ export function DocumentsView({
       setDocuments((current) => current.filter((item) => item.id !== target.id));
       toast.success(interpolate(tConfirm.deleteDocumentBody, { name: target.name }));
     } catch (error) {
+      toast.error(errorMessage(error, errors, common.genericError));
+    }
+  };
+
+  const confirmDeleteFolder = async () => {
+    if (!deletingFolder) return;
+
+    const target = deletingFolder;
+    setDeletingFolder(null);
+
+    try {
+      await withToken((token) => deleteFolder(token, target.id));
+      setFolders((current) => current.filter((folder) => folder.id !== target.id));
+
+      /*
+       * Fall back to "all files" when the folder being viewed is the one that
+       * just went. Leaving `folderId` pointing at a deleted folder would leave
+       * the list filtered by something the tree no longer shows.
+       */
+      if (folderId === target.id) {
+        setFolderId(undefined);
+      }
+
+      toast.success(tFolders.deleted);
+    } catch (error) {
+      // FOLDER_NOT_EMPTY lands here, and the dictionary already translates it —
+      // the API refuses to delete a folder with anything still in it.
       toast.error(errorMessage(error, errors, common.genericError));
     }
   };
@@ -200,15 +255,50 @@ export function DocumentsView({
     }
   };
 
+  const reprocess = async (item: DocumentSummary) => {
+    try {
+      const updated = await withToken((token) => reprocessDocument(token, item.id));
+
+      // Optimistic only as far as the status: the rest arrives over the stream
+      // as the worker moves through OCR and analysis.
+      setDocuments((current) =>
+        current.map((row) => (row.id === updated.id ? { ...row, status: updated.status } : row)),
+      );
+
+      toast.success(interpolate(t.processing.reprocessed, { name: item.name }));
+    } catch (error) {
+      toast.error(errorMessage(error, errors, common.genericError));
+    }
+  };
+
   const actionsFor = (item: DocumentSummary): RowAction[] => [
     // Offered for every document. The dialog itself explains the types it
     // cannot render, which is steadier than an action that comes and goes.
     { key: 'preview', label: t.actions.open, onSelect: () => setPreviewing(item) },
     { key: 'download', label: t.actions.download, onSelect: () => void download(item) },
     {
+      key: 'approval',
+      label: t.actions.requestApproval,
+      onSelect: () => setRequestingApproval(item),
+    },
+    /**
+     * Hidden while a worker already has the document — the API answers a second
+     * request with 409, and offering a button that is guaranteed to fail is
+     * worse than not offering it.
+     */
+    ...(isProcessing(item.status)
+      ? []
+      : [
+          {
+            key: 'reprocess',
+            label: t.actions.reprocess,
+            onSelect: () => void reprocess(item),
+          },
+        ]),
+    {
       key: 'delete',
       label: t.actions.delete,
-      tone: 'danger',
+      tone: 'danger' as const,
       onSelect: () => setConfirming(item),
     },
   ];
@@ -216,6 +306,26 @@ export function DocumentsView({
   const currentFolderName = folderId
     ? (folders.find((folder) => folder.id === folderId)?.name ?? t.allFiles)
     : t.allFiles;
+
+  /**
+   * One tree, rendered in two places — the desktop sidebar and the drawer that
+   * stands in for it below `lg`. Built here so the two cannot drift apart as
+   * props are added.
+   */
+  const folderTree = (onSelected?: () => void) => (
+    <FolderTree
+      folders={folders}
+      selectedId={folderId}
+      onSelect={(id) => {
+        setFolderId(id);
+        onSelected?.();
+      }}
+      onDelete={setDeletingFolder}
+      locale={lang}
+      t={t}
+      tFolders={tFolders}
+    />
+  );
 
   return (
     <DropZone onFiles={setPendingFiles} folderName={currentFolderName} t={tUpload}>
@@ -244,6 +354,19 @@ export function DocumentsView({
               type="search"
             />
           </div>
+
+          {/*
+           * The only route to the folder tree below `lg`, where the sidebar is
+           * hidden. Without it a tablet is stuck on "All files" — the filter
+           * exists but nothing can reach it.
+           */}
+          <Button
+            variant="secondary"
+            className="lg:hidden"
+            onClick={() => setBrowsingFolders(true)}
+          >
+            {t.folders}
+          </Button>
 
           <Button onClick={() => filePicker.current?.click()}>{t.upload}</Button>
           <Button variant="secondary" onClick={() => setCreatingFolder(true)}>
@@ -279,15 +402,7 @@ export function DocumentsView({
           variants={respectMotion(riseItem, reduced)}
           className="grid gap-6 lg:grid-cols-[13rem_1fr]"
         >
-          <aside className="hidden lg:block">
-            <FolderTree
-              folders={folders}
-              selectedId={folderId}
-              onSelect={setFolderId}
-              locale={lang}
-              t={t}
-            />
-          </aside>
+          <aside className="hidden lg:block">{folderTree()}</aside>
 
           <section className="min-w-0">
             {load === 'loading' ? (
@@ -383,16 +498,49 @@ export function DocumentsView({
         </motion.div>
       </motion.div>
 
+      {/*
+        Closes on selection: picking a folder is the only reason it was opened,
+        and making the reader dismiss it afterwards would turn one decision into
+        two taps.
+      */}
+      <Drawer
+        open={browsingFolders}
+        onClose={() => setBrowsingFolders(false)}
+        title={t.folders}
+        closeLabel={common.close}
+        rtl={direction[lang] === 'rtl'}
+      >
+        {folderTree(() => setBrowsingFolders(false))}
+      </Drawer>
+
       <DocumentPreview
-        // A fresh instance per document, so the previous file's blob is
-        // released and the new one starts from its loading state.
-        key={previewing?.id ?? 'none'}
+        /**
+         * A fresh instance per document, so the previous file's blob is
+         * released and the new one starts from its loading state.
+         *
+         * Namespaced, because the dialog below is keyed the same way: two
+         * siblings both falling back to a bare 'none' while nothing is open
+         * are two children of one array with the same key, which React warns
+         * about and which lets it confuse the two components' state.
+         */
+        key={`preview-${previewing?.id ?? 'none'}`}
         item={previewing}
         onClose={() => setPreviewing(null)}
         t={t}
         errors={errors}
         common={common}
         onDownload={(item) => void download(item)}
+      />
+
+      <RequestApprovalDialog
+        // Fresh fields per document, rather than resetting them in an effect.
+        // Namespaced for the same reason as the preview above.
+        key={`approval-${requestingApproval?.id ?? 'none'}`}
+        item={requestingApproval}
+        onClose={() => setRequestingApproval(null)}
+        t={tApprovals}
+        errors={errors}
+        common={common}
       />
 
       <Dialog
@@ -436,6 +584,31 @@ export function DocumentsView({
               {tConfirm.cancel}
             </Button>
             <Button onClick={() => void confirmDelete()}>{tConfirm.deleteDocumentSubmit}</Button>
+          </>
+        }
+      />
+
+      {/*
+        Separate from the document dialog above, not a shared one parameterised
+        by kind: the wording differs (a folder is gone for good, a document goes
+        to the trash), and merging them would mean a conditional inside every
+        string.
+      */}
+      <Dialog
+        open={deletingFolder !== null}
+        onClose={() => setDeletingFolder(null)}
+        title={tFolders.deleteTitle}
+        description={
+          deletingFolder
+            ? interpolate(tFolders.deleteBody, { name: deletingFolder.name })
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeletingFolder(null)}>
+              {tFolders.cancel}
+            </Button>
+            <Button onClick={() => void confirmDeleteFolder()}>{tFolders.deleteSubmit}</Button>
           </>
         }
       />
