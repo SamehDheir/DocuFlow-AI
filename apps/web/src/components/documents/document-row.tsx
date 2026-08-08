@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 import {
   Menu,
@@ -10,8 +11,10 @@ import {
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { interpolate } from '@/i18n/interpolate';
-import { formatBytes, type DocumentSummary } from '@/lib/documents';
+import { cn } from '@/lib/cn';
+import { formatBytes, type DocumentSummary, type DocumentTag } from '@/lib/documents';
 import { DocumentStatusBadge } from './document-status';
+import { TagChips } from './document-tags';
 
 /** File-type chip. Truncated, or an extension like "spreadsheetml" bursts it. */
 function FileGlyph({ extension }: { extension: string }) {
@@ -47,13 +50,32 @@ export function DocumentRow({
   locale,
   t,
   actions,
+  href,
   onOpen,
+  select,
+  star,
+  selected = false,
+  onTagSelect,
 }: {
   item: DocumentSummary;
   locale: Locale;
   t: Dictionary['documents'];
   actions: RowAction[];
+  /** Destination for the name. Takes precedence over `onOpen`. */
+  href?: string;
   onOpen?: () => void;
+  /**
+   * Slots rather than props, so the row stays free of the session, the toast and
+   * the selection model while both controls keep a fixed position in the layout.
+   * A row that renders its own checkbox in one view and not another is how two
+   * lists end up with different column rhythms.
+   */
+  select?: React.ReactNode;
+  star?: React.ReactNode;
+  /** Only for the tint and `aria-selected`; the checkbox inside `select` owns the state. */
+  selected?: boolean;
+  /** Makes the tag chips filter controls. Omitted, they are plain labels. */
+  onTagSelect?: (tag: DocumentTag) => void;
 }) {
   const [origin, setOrigin] = useState<MenuOrigin | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -72,12 +94,36 @@ export function DocumentRow({
         event.preventDefault();
         setOrigin(next);
       }}
-      className="hover:bg-surface-inset/60 relative flex items-center gap-4 px-4 py-3 transition-colors"
+      className={cn(
+        'relative flex items-center gap-4 px-4 py-3 transition-colors',
+        // The tint is what makes a selection legible while scrolling past the
+        // header checkbox; a tick 40 rows up is not a state anyone can hold.
+        selected ? 'bg-accent-subtle/60' : 'hover:bg-surface-inset/60',
+      )}
     >
+      {select ? <div className="shrink-0">{select}</div> : null}
+
       <FileGlyph extension={item.extension} />
 
       <div className="min-w-0 flex-1">
-        {onOpen ? (
+        {href ? (
+          /*
+           * The name leads to the detail route, not the quick-look dialog.
+           *
+           * The dialog is still one click away in the menu, and it is the right
+           * shape for "is this the file I meant". But the aggregate — history,
+           * discussion, the trail — is what the product is for, and burying it
+           * behind a menu makes the browser feel like the whole application.
+           * A real <a> also means middle-click and "open in new tab" work.
+           */
+          <Link
+            href={href}
+            className="latin focus-visible:outline-focus block max-w-full truncate rounded-xs text-start text-sm font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+            title={item.name}
+          >
+            {item.name}
+          </Link>
+        ) : onOpen ? (
           <button
             type="button"
             onClick={onOpen}
@@ -96,7 +142,19 @@ export function DocumentRow({
         <span className="text-text-subtle mt-0.5 block text-xs sm:hidden">
           {formatBytes(item.size, locale)}
         </span>
+
+        {/*
+          Under the name, capped at three. Tags are what `?tagId=` filters on,
+          so a browser that never shows them leaves the filter undiscoverable —
+          but a row is one line tall, and an unbounded set would push the name
+          out of the layout that makes the list scannable in the first place.
+        */}
+        {item.tags && item.tags.length > 0 ? (
+          <TagChips tags={item.tags} max={3} onSelect={onTagSelect} className="mt-1" />
+        ) : null}
       </div>
+
+      {star ? <div className="shrink-0">{star}</div> : null}
 
       {/*
        * Renders nothing for a READY document whose processing succeeded — which
