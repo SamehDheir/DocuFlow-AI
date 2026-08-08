@@ -26,6 +26,18 @@ permissions:
 
 jobs:
   # ----------------------------------------------------------------------------
+  # Nothing is published until CI passes on this exact commit.
+  #
+  # This workflow used to trigger independently of ci.yml and run no lint, no
+  # typecheck and no tests of its own, so tagging a red commit shipped it.
+  # ----------------------------------------------------------------------------
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # ----------------------------------------------------------------------------
   # Build the image matrix from apps that actually exist. Emitting the matrix
   # dynamically (rather than a static list plus per-job skips) is what keeps this
   # workflow valid while apps/ is still empty: an empty matrix is guarded by
@@ -64,7 +76,7 @@ jobs:
 
   build:
     name: Build & push ${{ matrix.app }}
-    needs: detect
+    needs: [ci, detect]
     if: needs.detect.outputs.any == 'true'
     runs-on: ubuntu-latest
     strategy:
@@ -113,8 +125,12 @@ jobs:
           # dependency install is the slow part.
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          # Both are inlined into the client bundle at build time. Set them as
+          # repository variables; an unset NEXT_PUBLIC_MAX_FILE_SIZE falls back
+          # to the client's own 100 MB default rather than to an empty ceiling.
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_MAX_FILE_SIZE=${{ vars.NEXT_PUBLIC_MAX_FILE_SIZE }}
           # linux/amd64 only. Adding linux/arm64 roughly doubles build time, so
           # enable it only if you actually deploy to ARM hosts:
           #   platforms: linux/amd64,linux/arm64
