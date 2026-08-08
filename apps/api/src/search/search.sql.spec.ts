@@ -40,13 +40,29 @@ describe('buildSearchQuery', () => {
       const query = build({
         folderId: '11111111-2222-4333-8444-555555555555',
         mimeType: 'application/pdf',
+        tagId: '99999999-8888-4777-8666-555555555555',
       });
 
       expect(query.sql).toContain('d.company_id =');
     });
 
     it('keeps the company predicate when no optional filter is set', () => {
-      expect(build({ folderId: undefined, mimeType: undefined }).sql).toContain('d.company_id =');
+      expect(build({ folderId: undefined, mimeType: undefined, tagId: undefined }).sql).toContain(
+        'd.company_id =',
+      );
+    });
+
+    /**
+     * The tag subquery is the only place a table with NO company_id of its own
+     * appears in this statement. It is safe purely because it correlates to
+     * `d.id`, and `d` is pinned to the tenant — so a future edit that loosened
+     * that correlation would turn this into a cross-tenant read.
+     */
+    it('correlates the tag subquery to the already-scoped document', () => {
+      const query = build({ tagId: '99999999-8888-4777-8666-555555555555' });
+
+      expect(query.sql).toContain('dt.document_id = d.id');
+      expect(query.sql).toContain('d.company_id =');
     });
   });
 
@@ -62,13 +78,16 @@ describe('buildSearchQuery', () => {
       expect(query.values).toContain(hostile);
     });
 
-    it('binds the folder and mime filters too', () => {
+    it('binds the folder, mime and tag filters too', () => {
       const folderId = '11111111-2222-4333-8444-555555555555';
-      const query = build({ folderId, mimeType: 'application/pdf' });
+      const tagId = '99999999-8888-4777-8666-555555555555';
+      const query = build({ folderId, mimeType: 'application/pdf', tagId });
 
       expect(query.values).toContain(folderId);
       expect(query.values).toContain('application/pdf');
+      expect(query.values).toContain(tagId);
       expect(query.sql).not.toContain(folderId);
+      expect(query.sql).not.toContain(tagId);
     });
   });
 

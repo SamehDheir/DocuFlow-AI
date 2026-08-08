@@ -26,6 +26,24 @@ export const PERMISSIONS = [
 
   { name: 'search.read', module: 'search', description: 'Search document contents' },
 
+  /**
+   * Applying a tag to a document is not here — it rides on `documents.update`,
+   * whose description has promised "re-tag" since v1. Managing the vocabulary
+   * is the separate power: tag names are a company-wide shared namespace, and
+   * renaming one silently relabels every document carrying it.
+   */
+  { name: 'tags.read', module: 'tags', description: 'See tags and filter by them' },
+  { name: 'tags.manage', module: 'tags', description: 'Create, rename and delete tags' },
+
+  /**
+   * Reading a discussion rides on `documents.read`: if you may open the
+   * document you may see what was said about it, and a separate read permission
+   * would only produce documents whose comment count you can see but not the
+   * comments. Moderating is the privileged half and is withheld from Member.
+   */
+  { name: 'comments.create', module: 'comments', description: 'Comment on documents' },
+  { name: 'comments.moderate', module: 'comments', description: "Delete anyone's comment" },
+
   { name: 'folders.create', module: 'folders', description: 'Create folders' },
   { name: 'folders.read', module: 'folders', description: 'Browse the folder tree' },
   { name: 'folders.update', module: 'folders', description: 'Rename and move folders' },
@@ -83,6 +101,12 @@ export const DEFAULT_ROLES = [
       'folders.read',
       'users.read',
       'search.read',
+      /**
+       * v4. A Member reads tags and joins the conversation, but does not own
+       * the company's tag vocabulary and cannot delete a colleague's comment.
+       */
+      'tags.read',
+      'comments.create',
     ] as PermissionName[],
   },
 ] as const;

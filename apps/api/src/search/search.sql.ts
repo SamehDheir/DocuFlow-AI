@@ -27,6 +27,7 @@ export interface SearchParams {
   query: string;
   folderId?: string;
   mimeType?: string;
+  tagId?: string;
   limit: number;
   offset: number;
 }
@@ -60,7 +61,7 @@ const NAME_SIMILARITY_THRESHOLD = 0.3;
  * return nothing.
  */
 export function buildSearchQuery(params: SearchParams): Prisma.Sql {
-  const { companyId, query, folderId, mimeType, limit, offset } = params;
+  const { companyId, query, folderId, mimeType, tagId, limit, offset } = params;
 
   const filters: Prisma.Sql[] = [
     // The tenant predicate. See the header — this is load-bearing.
@@ -84,6 +85,25 @@ export function buildSearchQuery(params: SearchParams): Prisma.Sql {
 
   if (mimeType) {
     filters.push(Prisma.sql`d.mime_type = ${mimeType}`);
+  }
+
+  /**
+   * EXISTS rather than a join, so a document carrying the tag is returned once
+   * — a join would multiply rows per matching link and corrupt both the ranking
+   * and the LIMIT.
+   *
+   * `document_tags` has no company_id of its own. It does not need one here:
+   * the correlation is to `d.id`, and `d` is already pinned to the tenant by
+   * the predicate at the top of this list. That is the whole reason the tenant
+   * filter has to stay where it is.
+   */
+  if (tagId) {
+    filters.push(
+      Prisma.sql`EXISTS (
+        SELECT 1 FROM document_tags dt
+         WHERE dt.document_id = d.id AND dt.tag_id = ${tagId}::uuid
+      )`,
+    );
   }
 
   return Prisma.sql`

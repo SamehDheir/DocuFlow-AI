@@ -29,6 +29,34 @@ export const ERROR_CODES = {
   MIME_NOT_ALLOWED: 'MIME_NOT_ALLOWED',
   PREVIEW_NOT_AVAILABLE: 'PREVIEW_NOT_AVAILABLE',
 
+  // Versions and archive (v4)
+  VERSION_NOT_FOUND: 'VERSION_NOT_FOUND',
+  /** A write was attempted on an archived document. Archive is read-only. */
+  DOCUMENT_ARCHIVED: 'DOCUMENT_ARCHIVED',
+  DOCUMENT_ALREADY_ARCHIVED: 'DOCUMENT_ALREADY_ARCHIVED',
+  DOCUMENT_NOT_ARCHIVED: 'DOCUMENT_NOT_ARCHIVED',
+
+  // Tags (v4)
+  TAG_NOT_FOUND: 'TAG_NOT_FOUND',
+  TAG_NAME_TAKEN: 'TAG_NAME_TAKEN',
+
+  // Comments (v4)
+  COMMENT_NOT_FOUND: 'COMMENT_NOT_FOUND',
+  /**
+   * Editing someone else's comment. Distinct from PERMISSION_DENIED, which is
+   * about capability: no permission grants this, so telling an administrator to
+   * go and find one would send them looking for something that does not exist.
+   */
+  COMMENT_NOT_AUTHOR: 'COMMENT_NOT_AUTHOR',
+
+  // Bulk operations (v4)
+  /**
+   * A batch that asks for nothing — no tags to add or remove, or the same tag on
+   * both sides. Distinct from an empty `ids` array, which class-validator
+   * rejects before the service is reached.
+   */
+  BULK_NO_CHANGES: 'BULK_NO_CHANGES',
+
   // Storage
   STORAGE_UNAVAILABLE: 'STORAGE_UNAVAILABLE',
 

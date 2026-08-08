@@ -74,6 +74,10 @@ enum NotificationType {
   APPROVAL_APPROVED
   APPROVAL_REJECTED
   APPROVAL_CANCELLED
+  /// v4. Both are addressed to people with a stake in the document — its owner,
+  /// and anyone already in the conversation — never to the person who acted.
+  DOCUMENT_COMMENTED
+  DOCUMENT_VERSION_ADDED
 }
 
 enum ApprovalStatus {
@@ -107,6 +111,8 @@ model Company {
   notifications       Notification[]
   approvalRequests    ApprovalRequest[]
   invitations         Invitation[]
+  comments            Comment[]
+  favorites           DocumentFavorite[]
 
   @@map("companies")
 }
@@ -146,6 +152,12 @@ model User {
   /// inviter's account, and an accepted invitation is part of the audit story.
   invitationsSent     Invitation[]         @relation("InvitationInvitedBy")
   approvalsDecided    ApprovalRequest[]    @relation("ApprovalDecider")
+  /// Cascade, following the rule above rather than adding a fourth Restrict
+  /// edge: a comment is meaningless without its author, and a bookmark is
+  /// private to one person. Neither is a historical fact worth outliving the
+  /// account — the audit log already records who said and did what.
+  comments            Comment[]            @relation("CommentAuthor")
+  favorites           DocumentFavorite[]   @relation("FavoriteUser")
 
   /// Email is unique PER COMPANY, not globally — the same person may hold an
   /// account with two different customers, and a global unique would let one
@@ -370,13 +382,15 @@ model Document {
   /// physically removed by the delete endpoint.
   deletedAt    DateTime?      @map("deleted_at")
 
-  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  folder    Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  owner     User              @relation("DocumentOwner", fields: [ownerId], references: [id])
+  company   Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder    Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  owner     User               @relation("DocumentOwner", fields: [ownerId], references: [id])
   versions  DocumentVersion[]
   metadata  DocumentMetadata?
   tags      DocumentTag[]
   approvals ApprovalRequest[]
+  comments  Comment[]
+  favorites DocumentFavorite[]
 
   @@index([companyId, folderId])
   @@index([companyId, status])
@@ -391,10 +405,19 @@ model DocumentVersion {
   versionNumber Int      @map("version_number")
   /// Each version points at its OWN immutable object. Reusing the document's
   /// key across versions would overwrite history — which is why the MinIO
-  /// bucket also has versioning enabled.
+  /// bucket also has versioning enabled, and why reverting COPIES the old bytes
+  /// to a fresh key rather than re-pointing at them: this column is unique, so
+  /// two rows cannot name one object.
   storageKey    String   @unique @map("storage_key")
   size          BigInt
   hash          String?
+  /// v4. Carried per version so a revert can restore the document's type and
+  /// filename, not just its bytes — a .docx replaced by a .pdf and then
+  /// reverted would otherwise leave the parent row describing the wrong file.
+  mimeType      String   @map("mime_type")
+  originalName  String   @map("original_name")
+  /// What changed, in the uploader's words. Optional; nothing infers it.
+  note          String?
   uploadedById  String   @map("uploaded_by_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -495,6 +518,74 @@ model DocumentTag {
   @@id([documentId, tagId])
   @@index([tagId])
   @@map("document_tags")
+}
+
+// -----------------------------------------------------------------------------
+// Collaboration
+// -----------------------------------------------------------------------------
+
+/// Discussion attached to a document (§12 Collaboration).
+///
+/// Flat, with no `parentId`. Threading is a nullable self-reference that nothing
+/// would write until a later version — which is exactly the shape `Tag` had
+/// while it sat dormant through three releases. A reply chain is a child concern
+/// and can be added when something is ready to use it.
+///
+/// Carries its own `companyId` rather than reaching the tenant through
+/// `documentId`, because `PATCH`/`DELETE /api/comments/:id` route on a bare
+/// comment id with no document in the path. That puts it in
+/// TENANT_SCOPED_MODELS, where the guard filters before execution, instead of
+/// among the transitively-scoped models a raw id can walk straight past.
+model Comment {
+  id         String    @id @default(uuid()) @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  documentId String    @map("document_id") @db.Uuid
+  authorId   String    @map("author_id") @db.Uuid
+  body       String
+  /// Set on edit, so the UI can mark a comment as changed. Silently rewriting
+  /// text someone else has already replied to is how a thread starts lying.
+  editedAt   DateTime? @map("edited_at")
+  /// Soft delete, like documents. "Who deleted what" is a problem this product
+  /// exists to answer, and that includes what was said.
+  deletedAt  DateTime? @map("deleted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author   User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  /// Serves the thread read: one document, oldest-to-newest, tenant pinned.
+  @@index([companyId, documentId, createdAt])
+  @@index([authorId])
+  @@map("comments")
+}
+
+/// A private bookmark (§12 Organization — "Favorites").
+///
+/// Per user, not per company: two colleagues keep different shortlists of the
+/// same shared documents, so this is the one document-adjacent row that is not
+/// meaningfully shared. It still carries `companyId` so the guard scopes it
+/// directly — a favourite is only ever read alongside its tenant's documents.
+///
+/// No `upsert` against this model: the guard refuses one whose where-clause
+/// cannot pin the tenant, and `@@id([userId, documentId])` does not include
+/// `companyId`. Favouriting is a create (P2002 means "already favourited") and
+/// unfavouriting is a delete.
+model DocumentFavorite {
+  companyId  String   @map("company_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation("FavoriteUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, documentId])
+  /// Serves "my favourites, newest first".
+  @@index([companyId, userId, createdAt])
+  @@index([documentId])
+  @@map("document_favorites")
 }
 
 // -----------------------------------------------------------------------------
