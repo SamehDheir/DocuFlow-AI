@@ -1,131 +1,185 @@
 # Next Steps
 
-Ordered build plan, written 2026-08-02 against commit `b548dd0` (branch `feature/i18n-arabic-english`). Section 1 was completed 2026-08-04 on `feature/auth-backend`.
+Rewritten 2026-08-08, after v4 and after wiring it into the web. The original
+document was an ordered plan for building v1 and was kept updated through v2; by
+v4 every section in it was finished and it had become a record rather than a
+plan. What follows is what is actually left, and what the finished work decided
+that the next piece has to respect.
 
-## Where the project actually stands
+Closed since the last revision: the four v3 audit actions
+(`auth.invitation_accepted`, `users.invited`, `users.invitation_revoked`,
+`users.roles_changed`) now have activity labels in both locales, so the feed no
+longer renders them as raw identifiers.
 
-| Area          | State                                                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| API           | `config/`, `common/tenant/`, `common/audit/`, `prisma/`, `health/`, `permissions/`, `auth/`. No documents or storage modules yet.   |
-| Web           | Design system, Arabic/English i18n with locale routing, finished login / register / forgot-password screens — **not yet wired up**. |
-| Database      | Migrations `init` and `auth_tokens` applied. 15 tables.                                                                             |
-| Contract gaps | [auth.ts](apps/web/src/lib/auth.ts) now reaches live endpoints, but nothing stores the session or acts on the response.             |
-
----
-
-## ~~1. Auth backend~~ — done
-
-Delivered as specified below, with three deviations worth recording:
-
-- **Refresh digests are HMAC-SHA256 keyed with `JWT_REFRESH_SECRET`**, not a bare SHA-256. Same cost, and it gives that env var a real job — the refresh token is opaque rather than a JWT, so nothing else would have signed with it.
-- **The permission catalogue is defined in code and reconciled at boot** by `PermissionsService`, instead of a `prisma/seed.ts`. Registration depends on the catalogue existing, and a seed script that someone forgets to run produces companies whose roles silently grant nothing.
-- **`POST /auth/reset-password` was added.** The endpoint table below omitted it, which would have left `password_reset_tokens` write-only.
-
-One latent bug surfaced during the e2e run and is worth remembering: **Prisma promises are lazy**, so `runAsSystem(() => db.user.findMany())` handed the unexecuted query back to a caller who awaited it after the context had unwound, and it failed closed. `runAsSystem()` now awaits internally. See the Architecture Constraints note in [CLAUDE.md](CLAUDE.md).
-
-<details>
-<summary>Original plan, kept for reference</summary>
-
-### 1.1 Resolve the middleware/guard ordering trap first
-
-This is the one design decision to make before writing code, because getting it wrong is discovered late and refactors the whole module.
-
-[tenant.middleware.ts:21-24](apps/api/src/common/tenant/tenant.middleware.ts#L21-L24) expects a JWT layer to have attached `req.user` by the time it runs. But Nest's request lifecycle is **middleware → guards → interceptors → pipes → handler**: a conventional `JwtAuthGuard` runs _after_ `TenantMiddleware` and would be too late. `TenantContextService.run()` also wraps `next()`, so the AsyncLocalStorage scope has to be opened in middleware to cover the whole request.
-
-Split the responsibility:
-
-- **`JwtMiddleware`** — verifies the `Authorization: Bearer` token, attaches `req.user = { sub, companyId, roles }`, and **does not throw** on a missing or invalid token. Registered in `AppModule` _before_ `TenantMiddleware` (registration order in `configure()` is execution order).
-- **`JwtAuthGuard`** — enforces that `req.user` exists, returns 401 otherwise. Honours an `@Public()` decorator for `/auth/login`, `/auth/register`, `/auth/forgot-password`, and `/health`. Apply it globally via `APP_GUARD` so new controllers are protected by default rather than by remembering to opt in.
-
-### 1.2 Dependencies
-
-```bash
-npm install @nestjs/jwt bcrypt cookie-parser --workspace=@docuflow/api
-npm install -D @types/bcrypt @types/cookie-parser --workspace=@docuflow/api
-```
-
-`bcrypt` rather than argon2 — `BCRYPT_ROUNDS` is already validated in [env.validation.ts:33](apps/api/src/config/env.validation.ts#L33). Skip passport: a hand-written guard over `@nestjs/jwt` is less machinery than passport + strategy + `@nestjs/passport` for one token type. `cookie-parser` is needed to read the refresh cookie, and must be wired in `main.ts` alongside the existing CORS config (which already sets `credentials: true`, matching the web client).
-
-### 1.3 Schema migration — two new tables
-
-Neither exists yet, and both are required for the flows the UI already offers.
-
-- **`RefreshToken`** — `id`, `companyId`, `userId`, `tokenHash`, `expiresAt`, `revokedAt?`, `createdAt`, plus `userAgent`/`ip` for a future session list. Store a **hash** of the token, never the token. Without this table a refresh token cannot be revoked, so logout is cosmetic and a stolen 7-day token stays valid for its full life. Rotate on every refresh and treat reuse of an already-rotated token as theft: revoke the whole family.
-- **`PasswordResetToken`** — `id`, `companyId`, `userId`, `tokenHash`, `expiresAt`, `usedAt?`. Single-use, short TTL.
-
-Both carry `companyId` so the tenant guard covers them. Run with `npm run prisma:migrate --workspace=@docuflow/api -- --name auth_tokens`.
-
-### 1.4 Permissions catalogue and default roles
-
-`permissions` is the global catalogue and `roles` are per-company, so registration has to materialise a role set for each new tenant.
-
-- Seed the `Permission` catalogue (`prisma/seed.ts`) with the v1 surface: `documents.{create,read,update,delete,restore}`, `folders.{create,read,update,delete}`, `users.{read,invite,update}`, `roles.{read,manage}`, `audit.read`.
-- On registration, create **Owner / Admin / Member** roles for the new company and grant the registering user Owner.
-
-### 1.5 The module
-
-`apps/api/src/auth/` with `auth.module.ts`, `auth.controller.ts`, `auth.service.ts`, `token.service.ts`, `dto/`, `guards/`, `decorators/`.
-
-| Endpoint                         | Notes                                                                                                                                  |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/auth/register`        | Company + Owner/Admin/Member roles + user + `UserRole`, in **one transaction** under `runAsSystem()`. Returns `{ accessToken, user }`. |
-| `POST /api/auth/login`           | Lookup under `runAsSystem()` — there is no tenant context yet at this point. Same generic error for unknown email and bad password.    |
-| `POST /api/auth/refresh`         | Reads the httpOnly cookie, rotates, re-issues. Detects reuse.                                                                          |
-| `POST /api/auth/logout`          | Revokes the refresh token and clears the cookie.                                                                                       |
-| `POST /api/auth/forgot-password` | **Always 200**, whatever the email. The UI depends on this; returning 404 for unknown addresses is an account-enumeration oracle.      |
-| `GET /api/auth/me`               | Session hydration for the web app.                                                                                                     |
-
-JWT payload is `{ sub, company_id, roles[], exp }` per CLAUDE.md. Set the refresh cookie `httpOnly`, `sameSite: 'lax'`, `secure` in production, and path-scoped to `/api/auth`.
-
-**Open decision — no mailer is in the stack.** For MVP, have forgot-password persist the token and log the reset URL at `info` level in development. Flag it in the README rather than pulling in an email provider now.
-
-### 1.6 Audit logging
-
-Register, login success, login failure, and logout each write an `audit_logs` row (company, user, action, entity, IP). Doing it here establishes the pattern every later mutating endpoint copies — retrofitting it across a dozen endpoints later is the expensive path.
-
-### 1.7 Tests
-
-- Unit specs beside the source (`npm test` only picks up `src/**/*.spec.ts`): password hashing, token rotation, reuse detection, the `runAsSystem()` boundaries.
-- E2E in `test/`: register → login → refresh → me → logout.
-- **A cross-tenant test.** Register two companies, then assert company A's token cannot read company B's rows. This is the guard's whole reason for existing and the one regression worth catching automatically.
-
-</details>
+For what exists today, see the Status table in [README.md](README.md). For the
+rules that cut across modules, see [CLAUDE.md](CLAUDE.md).
 
 ---
 
-## ~~2. Wire the web to the real auth~~ — done
+## Known gaps in what is built
 
-Session handling, route guarding, and a `/dashboard` landing page. Two decisions worth carrying forward:
+These are not new features. They are places where the current build stops short,
+in rough order of how much they matter.
 
-- **The access token lives in memory only**, so a reload restores the session from the refresh cookie instead. That is why `SessionProvider` has a `restoring` state and why the shell shows a skeleton rather than a signed-out page on a cold load.
-- **The refresh cookie is scoped to `/api/auth` and cannot be seen by `proxy.ts`.** The API therefore also sets `docuflow_session` — path `/`, script-readable, carrying no credential — purely so a navigation can be routed without a flash. It is a hint, not authorisation: it outlives revocation, and every protected read is still checked by the API.
+### 1. There is no mailer
 
-Rotation also gained a 10-second leeway before a spent refresh token counts as replay. Browser tabs share one cookie jar, so restoring several at once sends the same token from each; without the leeway that read as theft and signed the user out everywhere.
+The single largest gap, and it touches three finished features:
 
-Still open: **API error messages are English only.** The dictionaries cover client-side validation, but a 409 from registration renders untranslated. Fixing it properly means the API returning stable codes the web maps to strings.
+- `forgot-password` logs the reset URL in development and withholds it in
+  production, which means password reset does not work on a deployed instance.
+- `POST /api/invitations` returns the link to the inviter to deliver by hand.
+- Notifications are in-app only.
+
+Everything is already shaped for it — both tokens are single-use HMAC digests
+with expiries, and `NotificationsService` stores a type and a payload rather than
+rendered text, so an email renderer can read the same rows. What is missing is a
+transport and templates. Mailpit is already in `docker-compose.yml` behind the
+`mail` profile.
+
+### 2. Sign-in cannot choose a company
+
+Email is unique **per company**, so one address may exist in several tenants.
+Login takes the password and picks the oldest match on a tie. That was harmless
+while registration was the only way in; invitations made it reachable, because a
+person can now legitimately hold accounts in two workspaces with one address.
+
+The fix is a workspace picker after a password match against more than one
+account — a second step, not a schema change.
+
+### 3. Tags can be created but never renamed or deleted
+
+`PATCH /api/tags/:id` and `DELETE /api/tags/:id` exist and are tested. Nothing in
+the web calls them: the picker on a document creates a tag inline, which is the
+common case, but there is no screen that lists the company vocabulary and lets
+someone fix a typo or retire a label. `lib/tags.ts` deliberately does **not**
+wrap the two routes — an export with no caller is the dormant-code pattern this
+repository has already been bitten by, and they arrive with the screen.
+
+`deleteTag` returning `{ id, unlabelled }` is shaped for that screen: the count
+is what lets it warn how many documents are about to lose the label, since a tag
+is refused nothing on the way out the way an occupied folder is.
+
+### 4. The `Departments` and `Reports` modules are unallocated
+
+Both appear in the spec's module list and in no version plan. Approvals gate on
+the `documents.approve` permission precisely because the spec's "Department
+Manager" role has no schema behind it. Decide before building either.
+
+### 5. Bulk selection cannot exceed what is on screen
+
+`MAX_BULK_IDS` is 200 against a page size of 50, so "select all" covers several
+pages of "load more" and the ceiling is not reachable by clicking. The gap is the
+other direction: the endpoints take a list of ids, so there is nothing to send
+for rows the client has never loaded. "Select everything matching this filter"
+needs either the client to page the request itself, or the API to accept a filter
+in place of ids — and the second means a batch whose size the caller cannot see
+before pressing the button.
+
+### 6. Search results carry no tags or favourites
+
+The search endpoint accepts `?tagId=` and the web now sends it, so results can be
+narrowed by a label — but a hit cannot show which labels it carries or whether it
+is starred. The projection is raw SQL over the search index rather than the
+Prisma select the documents list uses, so both would have to be joined by hand,
+in the one query the tenant guard does not cover. Worth doing with a second pass
+that resolves the hit ids through Prisma, rather than by widening the raw query.
 
 ---
 
-## 3. Documents MVP backend
+## Where the next feature is likely to land
 
-In dependency order: `storage` → `folders` → `documents`.
+### Per-document permissions
 
-1. **`storage`** — MinIO client (`npm install minio`; the env vars are already validated). Bucket bootstrap, presigned upload/download URLs, `documents/company_<id>/<year>/<month>/<uuid>.<ext>` key layout.
-2. **`folders`** — CRUD. The `@@unique([companyId, parentId, name])` constraint needs a friendly duplicate-name error rather than a raw Prisma P2002.
-3. **`documents`** — create, upload (metadata → MinIO → status transitions), list with pagination and filters, download, soft delete, restore. Deletes set `DELETED`; they never remove rows, because Restore is a v1 feature.
+The single biggest architectural question left. Today authorisation is
+company-wide: holding `documents.read` means reading every document in the
+company. The spec's sharing model implies per-document ACLs, and that changes
+three things:
 
-Defer BullMQ. Without OCR or AI in v1, the only post-upload async work is thumbnails — the queue can wait until there is a real job for it. `status` still advances through the lifecycle so the column stays meaningful.
+- `BulkDocumentsService` checks permission once, at the route, because there is
+  nothing per-document to check. It would grow a filter step — the comment
+  saying so is already in the file.
+- The tenant guard filters by company; a document ACL is a second, orthogonal
+  predicate and does **not** belong inside it. Stacking a second concern into the
+  security boundary would put every cross-tenant guarantee behind a change to
+  unrelated logic.
+- Search is raw SQL. An ACL predicate has to be written there by hand, as the
+  tenant predicate already is.
+- The web assumes company-wide authorisation throughout. Every screen decides
+  what to offer from a single `/auth/me` permission list fetched once — the
+  checkbox column, the bulk bar's buttons, the tag editor, the comment actions.
+  Per-document rights make that a per-row question, which is a different fetch
+  and a different shape, not a stricter version of the same one.
+
+### Threaded comments
+
+`Comment` is deliberately flat, with no `parentId`. A reply chain is a nullable
+self-reference plus a recursive read — the schema comment records why it was left
+out rather than added dormant: `Tag` sat unused through three releases and that
+is the pattern worth not repeating.
+
+### Semantic search
+
+`document_metadata.embedding vector(1024)` exists and stays NULL, because neither
+Groq nor xAI publishes an embeddings endpoint. Setting `VOYAGE_API_KEY` is meant
+to switch it on with no migration — the column is dormant, not missing. What is
+not written is the backfill for documents indexed before it.
+
+### Sequential approvals
+
+The workflow is single-step by design. A chain of approvers is a child table
+(`approval_steps`) and an ordering rule, not a reshape of `ApprovalRequest`.
 
 ---
 
-## 4. Dashboard and document UI
+## v5, per the spec
 
-Storage usage, recent documents, activity feed, folder tree, upload with progress, document list. Per the Frontend Design Standard, empty / loading / error / dense states are part of each page, not a follow-up — and the 10,000-document case is the one that shows the work.
+Deferred deliberately and not started: **mobile app, external API, third-party
+integrations, billing.** Sections 12 and 8 of
+[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) enumerate the long-term
+surface — watermarking, encryption, mentions, translation, classification. Treat
+those as the roadmap, not the current target.
+
+An external API is the one with a prerequisite worth naming early: there is no
+Swagger in the stack, and no API-key or scope model. Both are additions to
+`auth`, not to the modules being exposed.
 
 ---
 
-## Housekeeping (fold into the next commit — don't make it a task)
+## Decisions worth not re-litigating
 
-- **[CLAUDE.md](CLAUDE.md) `Current State` is stale.** It describes the web app as "Default page + `GET /api/health`" and says "no domain functionality yet"; the web app now has a design system, i18n, and three auth screens. It is the file that primes every session, so a wrong table there misdirects work.
-- Same table says 14 tables; the `init` migration creates 13.
-- Delete the unused Next.js starter SVGs in [apps/web/public/](apps/web/public/) (`next.svg`, `vercel.svg`, `file.svg`, `globe.svg`, `window.svg`).
+Recorded because each was made against a real constraint, and each looks
+arbitrary without it.
+
+- **The AI provider is Groq, not Anthropic** — and Groq needs two models, because
+  its text models reject image content. `anthropic` and `openai` remain in the
+  env enum with no implementation; selecting one warns and falls back to the stub.
+- **No AI key is a supported configuration.** The pipeline, the notifications and
+  the search indexing all run against a deterministic stub, and the UI labels it
+  as one.
+- **Failure is never terminal for a document.** A failed OCR or summary still
+  ends at `READY` — the bytes uploaded fine and the file must stay downloadable.
+  The failure lives on `ocrStatus`/`aiStatus`.
+- **`f_normalize()` replaced `f_unaccent()`.** Postgres' `unaccent` covers Latin
+  diacritics only, so `مستند` would not have matched `مُسْتَنَد`. Both the
+  indexing trigger and every query call the same function so they cannot drift.
+- **Deletes are soft, everywhere** — documents and comments alike. "Who deleted
+  what, and can we get it back" is the question the product exists to answer.
+- **Favourites are the one write that is not audited.** A favourite changes
+  nothing about the document, and an audit row would publish a private shortlist
+  to everyone holding `audit.read`.
+- **Bulk operations report per-id partial success rather than failing the batch.**
+  A multi-select runs over a paginated list, so some rows are always stale; all
+  or nothing means never completing the action without hunting for the offender.
+- **Tagging one document replaces the whole set; tagging a selection is a delta.**
+  Whole-set semantics across a multi-select would clear labels the caller never
+  saw, on rows they never opened. The single-document form can afford replacement
+  because it shows what is there first — which is also why it is read-then-edit
+  rather than a picker that saves on every keystroke.
+- **A favourite is never asked for on anyone else's behalf.** There is no
+  `?userId=` beside `?favorite=true`, in the API or the client. Colleagues share
+  a company, so someone else's shortlist is a within-tenant leak the tenant guard
+  cannot see.
+- **The e2e suite runs on its own Redis database.** `QUEUE_WORKER_ENABLED=false`
+  only silences the workers in the test process; a dev server left running has
+  one at its default of `true`, on the same Redis, and it consumes the suite's
+  jobs. The failure looks like a regression in whichever specs lose the race.

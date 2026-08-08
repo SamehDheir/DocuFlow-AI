@@ -126,6 +126,32 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
+   * Server-side copy of one stored object to a new key.
+   *
+   * Reverting a document to an earlier version needs the old bytes under a NEW
+   * key, because `document_versions.storage_key` is unique — two rows cannot
+   * name one object, and history is append-only, so a revert appends a version
+   * rather than re-pointing at an old one.
+   *
+   * Copied inside MinIO rather than streamed down and back up: the bytes never
+   * enter this process, so reverting a 100 MB scan costs no memory here.
+   *
+   * Both keys are derived server-side by `buildStorageKey`, never supplied by a
+   * client — this is a path, and accepting one from a request would be a way to
+   * read or write across tenant prefixes.
+   */
+  async copyObject(sourceKey: string, destinationKey: string): Promise<void> {
+    try {
+      await this.client.copyObject(this.bucket, destinationKey, `/${this.bucket}/${sourceKey}`);
+    } catch (error) {
+      this.logger.error(`Failed to copy object ${sourceKey} to ${destinationKey}`, error);
+      throw new ServiceUnavailableException(
+        apiError(ERROR_CODES.STORAGE_UNAVAILABLE, 'The file could not be copied. Try again.'),
+      );
+    }
+  }
+
+  /**
    * Deletes an object, swallowing failure.
    *
    * Only for unwinding a half-finished upload. The database row is the source

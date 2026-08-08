@@ -39,6 +39,8 @@ export function Badge({
   pulse = false,
   dot = false,
   title,
+  onRemove,
+  removeLabel,
   className,
 }: {
   children: React.ReactNode;
@@ -48,6 +50,16 @@ export function Badge({
   dot?: boolean;
   /** Native tooltip — used to explain a failure without widening the chip. */
   title?: string;
+  /**
+   * Turns the chip into a dismissible one — a selected tag, an active filter.
+   *
+   * The control is a real button rather than a click handler on the chip: the
+   * chip itself is usually not interactive, and making the whole thing clickable
+   * means a stray click on the label destroys a selection.
+   */
+  onRemove?: () => void;
+  /** Accessible name for the remove control. Required when `onRemove` is set. */
+  removeLabel?: string;
   className?: string;
 }) {
   const reduced = useReducedMotion();
@@ -78,6 +90,28 @@ export function Badge({
         />
       ) : null}
       {children}
+
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={removeLabel}
+          className={cn(
+            '-me-0.5 rounded-full p-0.5',
+            'transition-colors duration-fast ease-out-quint',
+            'hover:bg-text/10 focus-visible:outline-focus focus-visible:outline-2 focus-visible:outline-offset-1',
+          )}
+        >
+          <svg viewBox="0 0 10 10" className="size-2.5" aria-hidden="true" fill="none">
+            <path
+              d="m2 2 6 6M8 2l-6 6"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      ) : null}
     </span>
   );
 }

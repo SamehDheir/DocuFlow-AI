@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, develop]
   workflow_dispatch:
+  # Callable so Release can depend on it. A tag pointing at a red commit used to
+  # publish to GHCR regardless — release.yml triggers independently of this file
+  # and ran no tests of its own.
+  workflow_call:
 
 # Superseded runs on the same branch are pointless; cancel them.
 concurrency:
@@ -177,6 +181,15 @@ jobs:
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci_test_secret_not_used_outside_ci
       JWT_REFRESH_SECRET: ci_test_refresh_secret_not_used_outside_ci
+      # The e2e suite boots the real AppModule, so it needs object storage too.
+      # None of these three have a zod default (see config/env.validation.ts) —
+      # without them the app refuses to start rather than guessing.
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: docuflow
+      MINIO_SECRET_KEY: docuflow_test_password
+      MINIO_BUCKET: docuflow-documents
 
     steps:
       - uses: actions/checkout@v7
@@ -185,6 +198,33 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      # Not a `services:` container, deliberately. MinIO needs `server /data` as
+      # its command, and a service container cannot express one — it accepts an
+      # image, env, ports and `docker create` options, but no argv. So it runs
+      # as an ordinary step instead.
+      #
+      # No bucket bootstrap is needed: StorageService calls bucketExists/makeBucket
+      # itself at boot, which is the same path production takes.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live > /dev/null; then
+              echo "MinIO is live after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::MinIO did not become live within 60s."
+          docker logs minio
+          exit 1
 
       - name: Install dependencies
         run: npm ci
@@ -204,8 +244,17 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --workspace=@docuflow/api --if-present
 
+      # No `--if-present`. The only thing it can do now that the script exists is
+      # turn a renamed or deleted script into a green run.
       - name: Test
-        run: npm run test --workspace=@docuflow/api --if-present
+        run: npm run test --workspace=@docuflow/api
+
+      # `npm test` is rootDir: src, so it never sees test/. This suite boots the
+      # real AppModule against live Postgres, Redis and MinIO — and it is where
+      # the cross-tenant assertions live, which is the one regression class this
+      # project cannot afford to catch by hand.
+      - name: Test (e2e)
+        run: npm run test:e2e --workspace=@docuflow/api
 
       - name: Build
         run: npm run build --workspace=@docuflow/api
@@ -236,7 +285,7 @@ jobs:
         run: npm run typecheck --workspace=@docuflow/web --if-present
 
       - name: Test
-        run: npm run test --workspace=@docuflow/web --if-present
+        run: npm run test --workspace=@docuflow/web
 
       - name: Build
         env:

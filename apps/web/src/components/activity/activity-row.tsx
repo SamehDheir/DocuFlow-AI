@@ -1,5 +1,6 @@
 'use client';
 
+import { Avatar } from '@/components/ui/avatar';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { relativeTime, type ActivityEntry } from '@/lib/activity';
@@ -24,13 +25,6 @@ function subjectOf(entry: ActivityEntry): string | null {
   }
 
   return null;
-}
-
-function initialsOf(entry: ActivityEntry, fallback: string): string {
-  if (!entry.user) return fallback.slice(0, 1).toUpperCase();
-
-  const { firstName, lastName } = entry.user;
-  return `${firstName.slice(0, 1)}${lastName.slice(0, 1)}`.toUpperCase();
 }
 
 /**
@@ -62,12 +56,13 @@ export function ActivityRow({
 
   return (
     <li className="flex items-start gap-3 px-5 py-3">
-      <span
-        aria-hidden="true"
-        className="bg-surface-inset text-text-subtle border-border text-3xs mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border font-semibold"
-      >
-        {initialsOf(entry, t.system)}
-      </span>
+      <Avatar
+        firstName={entry.user?.firstName}
+        lastName={entry.user?.lastName}
+        fallback={t.system}
+        size="sm"
+        className="mt-0.5"
+      />
 
       <p className="min-w-0 flex-1 text-sm leading-relaxed">
         <span className="font-medium">{actor}</span> <span className="text-text-muted">{verb}</span>

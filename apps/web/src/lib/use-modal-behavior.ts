@@ -30,11 +30,31 @@ export function useModalBehavior({
 }) {
   const restoreTo = useRef<HTMLElement | null>(null);
 
+  /**
+   * `onClose` is held in a ref, and this is the whole reason the trap works.
+   *
+   * Callers pass an inline arrow — `onClose={() => setOpen(false)}` — so its
+   * identity changes on EVERY render of the component that owns the dialog.
+   * Depending on it directly made the effect below tear down and set up again on
+   * every keystroke: the cleanup fired `restoreTo.current?.focus()` and the
+   * setup re-focused the panel's first control. Typing one character into the
+   * second field of a dialog therefore threw focus back to the first, and
+   * `restoreTo` was overwritten with whatever had just been stolen from.
+   *
+   * The handler reads through the ref instead, so it stays stable and the effect
+   * keys on `open` alone — the same shape `useLiveEvent` uses for subscriptions.
+   */
+  const latestClose = useRef(onClose);
+
+  useEffect(() => {
+    latestClose.current = onClose;
+  });
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        latestClose.current();
         return;
       }
 
@@ -56,7 +76,9 @@ export function useModalBehavior({
         first.focus();
       }
     },
-    [onClose, panel],
+    // `panel` is a ref object and never changes identity, so this callback is
+    // created once — which is what keeps the effect below from re-running.
+    [panel],
   );
 
   useEffect(() => {

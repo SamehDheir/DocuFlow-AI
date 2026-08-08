@@ -18,6 +18,8 @@ const TENANT_SCOPED_MODELS = new Set([
   'Notification',
   'ApprovalRequest',
   'Invitation',
+  'Comment',
+  'DocumentFavorite',
 ]);
 
 /**

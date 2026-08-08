@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 import { isLocale, locales } from '@/i18n/config';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { DocumentsView } from './documents-view';
+import Loading from './loading';
 
 export async function generateMetadata({
   params,
@@ -31,15 +33,24 @@ export default async function DocumentsPage({ params }: { params: Promise<{ lang
   const dict = await getDictionary(lang);
 
   return (
-    <DocumentsView
-      lang={lang}
-      t={dict.documents}
-      tUpload={dict.upload}
-      tFolders={dict.folders}
-      tConfirm={dict.confirm}
-      tApprovals={dict.approvals}
-      errors={dict.errors}
-      common={dict.common}
-    />
+    /**
+     * The view seeds its folder filter from `?folderId=` with `useSearchParams`,
+     * which cannot be resolved during the static prerender. Same boundary, same
+     * reason, and the same fallback as the route's own `loading.tsx`.
+     */
+    <Suspense fallback={<Loading />}>
+      <DocumentsView
+        lang={lang}
+        t={dict.documents}
+        tUpload={dict.upload}
+        tFolders={dict.folders}
+        tConfirm={dict.confirm}
+        tApprovals={dict.approvals}
+        tTags={dict.tags}
+        tBulk={dict.bulk}
+        errors={dict.errors}
+        common={dict.common}
+      />
+    </Suspense>
   );
 }

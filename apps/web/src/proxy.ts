@@ -47,6 +47,11 @@ const PROTECTED = [
  * signed in to one company may legitimately hold an invitation to another, and
  * bouncing them to their own dashboard would make that link impossible to use
  * without signing out first.
+ *
+ * `/reset-password` is absent for the same reason. The link arrives by email and
+ * is followed on whatever device opened it — often one already signed in as
+ * someone else, or signed in as the very account being recovered. Redirecting to
+ * the dashboard would strand the token, and the token is single-use.
  */
 const AUTH_ONLY = ['/login', '/register', '/forgot-password'];
 

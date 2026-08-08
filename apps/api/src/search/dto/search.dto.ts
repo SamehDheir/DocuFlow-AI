@@ -27,6 +27,11 @@ export class SearchDto {
   @MaxLength(150)
   mimeType?: string;
 
+  /** Narrows to documents carrying this tag. */
+  @IsOptional()
+  @IsUUID()
+  tagId?: string;
+
   @IsOptional()
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsInt()

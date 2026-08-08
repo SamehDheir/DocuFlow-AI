@@ -60,6 +60,11 @@ export class ListDocumentsDto {
   @IsUUID()
   ownerId?: string;
 
+  /** Narrows to documents carrying this tag. */
+  @IsOptional()
+  @IsUUID()
+  tagId?: string;
+
   /** Opaque cursor: the id of the last document on the previous page. */
   @IsOptional()
   @IsUUID()
@@ -76,4 +81,26 @@ export class ListDocumentsDto {
   @IsOptional()
   @IsBooleanString()
   trash?: string;
+
+  /**
+   * `true` puts archived documents back in the results.
+   *
+   * They are hidden by default, which is the entire point of archiving — a
+   * status that changed nothing about what you see would not be worth setting.
+   * Asking for `?status=ARCHIVED` explicitly also returns them, so there are two
+   * ways to see an archive: alongside everything else, or on its own.
+   */
+  @IsOptional()
+  @IsBooleanString()
+  includeArchived?: string;
+
+  /**
+   * `true` narrows to the caller's own favourites.
+   *
+   * There is no `?userId=` to pair it with, on purpose: a favourite is a private
+   * bookmark, and the only shortlist this endpoint will show you is your own.
+   */
+  @IsOptional()
+  @IsBooleanString()
+  favorite?: string;
 }

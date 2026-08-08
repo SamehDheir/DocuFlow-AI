@@ -33,6 +33,18 @@ export function errorMessage(
   return error.message || fallback;
 }
 
+/**
+ * The translated sentence for a bare error code.
+ *
+ * Bulk operations report per-id refusals as codes with no message beside them —
+ * a 200 carrying `{ id, code }` rows, not a thrown ApiError — so there is no
+ * English fallback to fall through to, only the code itself. Shown raw, that is
+ * `DOCUMENT_ALREADY_ARCHIVED` in the middle of an Arabic page.
+ */
+export function codeMessage(code: string, errors: Dictionary['errors'], fallback: string): string {
+  return code in errors ? errors[code as keyof Dictionary['errors']] : fallback;
+}
+
 /** True when the user aborted an upload, which is not worth reporting as failure. */
 export function isCancelled(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'UPLOAD_CANCELLED';

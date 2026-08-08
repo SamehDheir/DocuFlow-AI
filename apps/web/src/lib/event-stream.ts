@@ -27,6 +27,14 @@ export type LiveEvent =
     }
   | { type: 'notification'; unread: number }
   | { type: 'approval.changed'; documentId: string; approvalId: string }
+  /**
+   * A comment was posted, edited or removed.
+   *
+   * Ids only — the body never rides the company-wide channel. A client with the
+   * thread open refetches it through the endpoint that checks permissions, which
+   * is also what makes the event safe to broadcast to everyone in the company.
+   */
+  | { type: 'comment.changed'; documentId: string; commentId: string }
   /** Server heartbeat, so proxies keep an idle connection open. Ignored. */
   | { type: 'ping' };
 

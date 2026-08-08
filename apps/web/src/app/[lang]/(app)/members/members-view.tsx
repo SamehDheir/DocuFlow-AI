@@ -3,8 +3,10 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Dialog } from '@/components/ui/dialog';
 import { EmptyState, FolderGlyph } from '@/components/ui/empty-state';
 import { Select } from '@/components/ui/select';
@@ -200,17 +202,15 @@ export function MembersView({
       animate="visible"
       className="flex flex-col gap-8"
     >
-      <motion.header variants={variants} className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-text-subtle text-xs font-medium tracking-wide uppercase">{t.title}</p>
-          <h1 className="font-display mt-1 text-3xl tracking-tight text-balance sm:text-4xl">
-            {t.title}
-          </h1>
-          <p className="text-text-muted mt-2 max-w-2xl text-sm">{t.subtitle}</p>
-        </div>
-
-        {canInvite ? <Button onClick={() => setInviting(true)}>{t.invite.action}</Button> : null}
-      </motion.header>
+      <PageHeader
+        variants={variants}
+        eyebrow={t.title}
+        title={t.title}
+        description={t.subtitle}
+        actions={
+          canInvite ? <Button onClick={() => setInviting(true)}>{t.invite.action}</Button> : null
+        }
+      />
 
       {/* One tab when there is nothing to put behind the second. */}
       {canInvite ? (
@@ -374,9 +374,6 @@ function MemberCard({
    */
   const current = roles.find((role) => member.roles.includes(role.name));
 
-  const initials =
-    `${member.firstName.trim().charAt(0)}${member.lastName.trim().charAt(0)}`.toUpperCase() || '?';
-
   return (
     <motion.li
       layout
@@ -385,12 +382,7 @@ function MemberCard({
       exit={{ opacity: 0 }}
       className="border-border bg-surface flex flex-wrap items-center gap-x-3 gap-y-4 rounded-xl border p-4"
     >
-      <span
-        aria-hidden="true"
-        className="bg-accent-subtle text-accent border-accent-border text-3xs flex size-9 shrink-0 items-center justify-center rounded-full border font-semibold"
-      >
-        {initials}
-      </span>
+      <Avatar firstName={member.firstName} lastName={member.lastName} tone="accent" />
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-2 text-sm font-medium">

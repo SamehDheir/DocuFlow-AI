@@ -174,7 +174,28 @@ export default async function RootLayout({
           document.documentElement exists by this point, so the attribute lands
           on the element the CSS is keyed to.
         */}
-        <script id="docuflow-theme-boot" dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        {/*
+          Why the script is wrapped rather than rendered directly:
+
+          React 19.2 reports `Encountered a script tag while rendering React
+          component` for any executable inline <script> in the tree. It is right
+          to: on a CLIENT render — a Fast Refresh, or a navigation that
+          re-creates the layout — React builds the node with createElement, and
+          a script created that way never executes. Only the server-rendered
+          copy ever runs.
+
+          Handing React a container and letting the script arrive as innerHTML
+          keeps exactly the behaviour that is wanted at both ends. The server
+          streams `<div><script>…</script></div>`, the browser parses it inline
+          and executes it before first paint. On the client React only ever sets
+          innerHTML, which per spec does not execute scripts — which is correct,
+          because re-applying the theme after boot would be pointless work.
+        */}
+        <div
+          id="docuflow-theme-boot"
+          hidden
+          dangerouslySetInnerHTML={{ __html: `<script>${THEME_BOOT}</script>` }}
+        />
 
         <SessionProvider>{children}</SessionProvider>
       </body>

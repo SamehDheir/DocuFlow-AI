@@ -56,6 +56,15 @@ export interface SearchResults {
 export interface SearchOptions {
   folderId?: string;
   mimeType?: string;
+  /**
+   * Narrows to documents carrying this tag.
+   *
+   * A hit itself carries no tags — the projection is raw SQL over the search
+   * index, not the Prisma list select — so this narrows the results without
+   * being able to show why each one matched. That is the trade the tag filter
+   * makes here and not on the documents list, where the chips are on the rows.
+   */
+  tagId?: string;
   limit?: number;
   offset?: number;
 }
@@ -70,6 +79,7 @@ export function searchDocuments(
       q,
       folderId: options.folderId,
       mimeType: options.mimeType,
+      tagId: options.tagId,
       limit: options.limit,
       offset: options.offset,
     })}`,

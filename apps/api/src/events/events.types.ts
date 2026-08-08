@@ -23,6 +23,12 @@ export type LiveEvent =
       unread: number;
     }
   | { type: 'approval.changed'; documentId: string; approvalId: string }
+  /**
+   * A comment was posted, edited or removed. Carries ids only, so a client with
+   * the thread open refetches it through the endpoint that checks permissions —
+   * the body itself never rides the company-wide channel.
+   */
+  | { type: 'comment.changed'; documentId: string; commentId: string }
   /** Keeps proxies from closing an idle connection. The client ignores it. */
   | { type: 'ping' };
 

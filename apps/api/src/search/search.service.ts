@@ -98,6 +98,7 @@ export class SearchService {
         query,
         folderId: dto.folderId,
         mimeType: dto.mimeType,
+        tagId: dto.tagId,
         // One extra row answers "is there more?" without a second count query.
         limit: limit + 1,
         offset,

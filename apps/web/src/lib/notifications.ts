@@ -13,7 +13,10 @@ export type NotificationType =
   | 'APPROVAL_REQUESTED'
   | 'APPROVAL_APPROVED'
   | 'APPROVAL_REJECTED'
-  | 'APPROVAL_CANCELLED';
+  | 'APPROVAL_CANCELLED'
+  /** v4. Both are addressed to people with a stake in the document, never to the actor. */
+  | 'DOCUMENT_COMMENTED'
+  | 'DOCUMENT_VERSION_ADDED';
 
 export interface AppNotification {
   id: string;
@@ -25,7 +28,14 @@ export interface AppNotification {
    * message. The server stores no prose, so switching language re-renders the
    * whole history rather than leaving old notifications in the old language.
    */
-  payload: { name?: string; documentId?: string; reason?: string; note?: string } | null;
+  payload: {
+    name?: string;
+    documentId?: string;
+    reason?: string;
+    note?: string;
+    /** v4, on DOCUMENT_COMMENTED. Present so a link can land on the remark itself. */
+    commentId?: string;
+  } | null;
   /** Null means unread. */
   readAt: string | null;
   createdAt: string;

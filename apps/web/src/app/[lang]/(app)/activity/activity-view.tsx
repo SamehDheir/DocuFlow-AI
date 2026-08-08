@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { ActivityRow } from '@/components/activity/activity-row';
 import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
 import type { Locale } from '@/i18n/config';
@@ -121,13 +122,7 @@ export function ActivityView({
       animate="visible"
       className="flex flex-col gap-8"
     >
-      <motion.header variants={variants}>
-        <p className="text-text-subtle text-xs font-medium tracking-wide uppercase">{t.title}</p>
-        <h1 className="font-display mt-1 text-3xl tracking-tight text-balance sm:text-4xl">
-          {t.title}
-        </h1>
-        <p className="text-text-muted mt-2 text-sm">{t.subtitle}</p>
-      </motion.header>
+      <PageHeader variants={variants} eyebrow={t.title} title={t.title} description={t.subtitle} />
 
       <motion.div variants={variants} className="flex flex-wrap items-end gap-3">
         <Field label={t.filters.action}>

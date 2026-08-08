@@ -30,6 +30,13 @@ export default function Loading() {
         <Skeleton className="h-11 w-28 rounded-lg" />
       </div>
 
+      {/* Filter row, at the negative offset the real one sits at. */}
+      <div className="-mt-4 flex flex-wrap items-end gap-3">
+        <Skeleton className="h-9 w-24 rounded-lg" />
+        <Skeleton className="h-9 w-32 rounded-lg" />
+        <Skeleton className="h-9 w-48 rounded-lg" />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[13rem_1fr]">
         {/* Folder tree. Hidden below lg exactly as the real sidebar is, so the
             drawer-backed layout at tablet width is not promised a column that

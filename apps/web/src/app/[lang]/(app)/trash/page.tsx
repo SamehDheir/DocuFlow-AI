@@ -35,6 +35,7 @@ export default async function TrashPage({ params }: { params: Promise<{ lang: st
       lang={lang}
       t={dict.trash}
       tDocuments={dict.documents}
+      tBulk={dict.bulk}
       errors={dict.errors}
       common={dict.common}
     />
