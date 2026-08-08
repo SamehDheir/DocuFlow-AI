@@ -122,6 +122,30 @@
       "description": "اطلب رابط إعادة تعيين كلمة المرور لحسابك في DocuFlow AI."
     }
   },
+  "reset": {
+    "title": "اختر كلمة مرور جديدة",
+    "subtitle": "اختر كلمة مرور لم تستخدمها في مكان آخر. من الطبيعي أن تسجّل الدخول مجددًا بعدها.",
+    "passwordLabel": "كلمة المرور الجديدة",
+    "passwordPlaceholder": "١٢ حرفًا على الأقل",
+    "confirmLabel": "تأكيد كلمة المرور الجديدة",
+    "submit": "تعيين كلمة المرور",
+    "submitting": "جارٍ الحفظ",
+    "doneTitle": "تم تغيير كلمة المرور",
+    "doneBody": "كلمة المرور الجديدة صارت سارية. وقد تم تسجيل الخروج من كل الأجهزة التي كانت مسجّلة الدخول، بما فيها هذا الجهاز.",
+    "doneAction": "تسجيل الدخول",
+    "invalidTitle": "هذا الرابط لم يعد صالحًا",
+    "invalidBody": "تدوم روابط إعادة التعيين ٣٠ دقيقة ولا تُستخدم إلا مرة واحدة. اطلب رابطًا جديدًا وسيصلك خلال لحظات.",
+    "invalidAction": "اطلب رابطًا جديدًا",
+    "errors": {
+      "required": "اختر كلمة مرور.",
+      "short": "استخدم ١٢ حرفًا على الأقل.",
+      "mismatch": "يجب أن تتطابق كلمتا المرور."
+    },
+    "meta": {
+      "title": "اختر كلمة مرور جديدة",
+      "description": "عيّن كلمة مرور جديدة لحسابك في DocuFlow AI."
+    }
+  },
   "app": {
     "skipToContent": "تخطَّ إلى المحتوى",
     "account": "الحساب",
@@ -187,6 +211,15 @@
     "FILE_TOO_LARGE": "حجم هذا الملف أكبر من الحد المسموح به.",
     "MIME_NOT_ALLOWED": "هذا النوع من الملفات غير مقبول.",
     "PREVIEW_NOT_AVAILABLE": "لا يمكن معاينة هذا النوع من الملفات.",
+    "VERSION_NOT_FOUND": "لم تعد هذه النسخة موجودة.",
+    "DOCUMENT_ARCHIVED": "هذا المستند مؤرشف. أعِده من الأرشيف قبل إجراء أي تغيير.",
+    "DOCUMENT_ALREADY_ARCHIVED": "هذا المستند مؤرشف بالفعل.",
+    "DOCUMENT_NOT_ARCHIVED": "هذا المستند ليس في الأرشيف.",
+    "TAG_NOT_FOUND": "لم يعد هذا الوسم موجودًا.",
+    "TAG_NAME_TAKEN": "يوجد وسم بهذا الاسم بالفعل.",
+    "COMMENT_NOT_FOUND": "لم يعد هذا التعليق موجودًا.",
+    "COMMENT_NOT_AUTHOR": "لا يمكنك تعديل سوى تعليقاتك أنت.",
+    "BULK_NO_CHANGES": "اختر تغييرًا واحدًا على الأقل لتطبيقه.",
     "STORAGE_UNAVAILABLE": "خدمة التخزين غير متاحة حالياً. حاول مرة أخرى.",
     "UPLOAD_CANCELLED": "تم إلغاء الرفع.",
     "DOCUMENT_ALREADY_PROCESSING": "هذا المستند قيد المعالجة بالفعل.",
@@ -197,7 +230,9 @@
     "APPROVAL_ALREADY_PENDING": "يوجد بالفعل طلب اعتماد مفتوح لهذا المستند.",
     "APPROVAL_ALREADY_DECIDED": "تم البتّ في هذا الطلب بالفعل.",
     "APPROVAL_SELF_DECISION": "لا يمكنك البتّ في طلبك الخاص.",
-    "APPROVAL_NOT_ASSIGNEE": "هذا الطلب مُسند إلى شخص آخر."
+    "APPROVAL_NOT_ASSIGNEE": "هذا الطلب مُسند إلى شخص آخر.",
+    "CONFLICT": "هذا يتعارض مع عنصر موجود بالفعل.",
+    "NOT_FOUND": "تعذّر العثور على ذلك."
   },
   "documents": {
     "title": "المستندات",
@@ -210,6 +245,25 @@
     "allFiles": "كل الملفات",
     "root": "كل الملفات",
     "folders": "المجلدات",
+    "favorites": {
+      "add": "إضافة {name} إلى المفضلة",
+      "remove": "إزالة {name} من المفضلة",
+      "filter": "المفضلة",
+      "emptyTitle": "لا يوجد شيء في المفضلة بعد",
+      "emptyBody": "ضع نجمة على مستند وستجده في انتظارك هنا."
+    },
+    "filters": {
+      "archived": "إظهار المؤرشف",
+      "tag": "الوسم",
+      "allTags": "كل الوسوم",
+      "clear": "مسح عوامل التصفية",
+      "emptyTitle": "لا شيء يطابق هذه التصفية",
+      "emptyBody": "جرّب توسيعها، أو امسحها لرؤية كل شيء من جديد."
+    },
+    "selection": {
+      "row": "تحديد {name}",
+      "all": "تحديد كل المستندات بالأسفل"
+    },
     "countOne": "مستند واحد",
     "countMany": "{count} مستنداً",
     "loadMore": "تحميل المزيد",
@@ -229,7 +283,11 @@
       "restore": "استعادة",
       "menu": "إجراءات {name}",
       "reprocess": "إعادة المعالجة",
-      "requestApproval": "اطلب اعتمادًا"
+      "requestApproval": "اطلب اعتمادًا",
+      "details": "فتح التفاصيل",
+      "quickLook": "نظرة سريعة",
+      "archive": "أرشفة",
+      "unarchive": "إخراج من الأرشيف"
     },
     "status": {
       "UPLOADING": "جارٍ الرفع",
@@ -291,7 +349,135 @@
       "reprocessing": "جارٍ إعادة المعالجة…",
       "reprocessed": "تمت جدولة {name} لإعادة المعالجة",
       "stub": "أُنشئ بواسطة المزوّد التجريبي — أضف مفتاح الذكاء الاصطناعي للتحليل الحقيقي."
+    },
+    "versions": {
+      "title": "سجل النسخ",
+      "label": "النسخة {version}",
+      "current": "الحالية",
+      "by": "{name} · {date}",
+      "upload": "رفع نسخة جديدة",
+      "uploadHint": "يبقى الملف الحالي في السجل — لا شيء يُستبدل.",
+      "uploaded": "تم رفع نسخة جديدة",
+      "file": "الملف",
+      "note": "ما الذي تغيّر",
+      "noteHint": "اختياري. سيشكرك من يقرأ السجل لاحقًا.",
+      "revert": "استعادة هذه النسخة",
+      "revertBody": "تُنسخ النسخة {version} إلى أعلى السجل. لا شيء يُفقد.",
+      "revertSubmit": "استعادة",
+      "reverted": "تمت استعادة النسخة {version}",
+      "frozen": "هذا المستند مؤرشف. أخرجه من الأرشيف لإضافة نسخة.",
+      "countOne": "نسخة واحدة",
+      "countMany": "{count} نسخة"
+    },
+    "detail": {
+      "back": "العودة إلى المستندات",
+      "loading": "جارٍ تحميل المستند",
+      "tabs": {
+        "document": "المستند",
+        "text": "النص",
+        "summary": "الملخّص",
+        "versions": "النسخ",
+        "approval": "الاعتماد",
+        "comments": "النقاش"
+      },
+      "about": {
+        "title": "التفاصيل",
+        "status": "الحالة",
+        "owner": "المالك",
+        "folder": "المجلد",
+        "root": "كل الملفات",
+        "type": "النوع",
+        "size": "الحجم",
+        "created": "تاريخ الرفع",
+        "updated": "آخر تعديل",
+        "hash": "البصمة",
+        "hashHint": "SHA-256 للبايتات المخزّنة."
+      },
+      "archived": {
+        "title": "مؤرشف",
+        "body": "هذا المستند للقراءة فقط. لا يزال يمكن قراءته وتنزيله والتعليق عليه."
+      },
+      "notFound": {
+        "title": "هذا المستند غير موجود هنا",
+        "body": "ربما نُقل إلى المحذوفات، أو أن الرابط غير صحيح.",
+        "action": "العودة إلى المستندات"
+      },
+      "error": {
+        "title": "تعذّر تحميل هذا المستند",
+        "retry": "أعد المحاولة"
+      },
+      "archivedToast": "تمت أرشفة {name}",
+      "unarchivedToast": "تم إخراج {name} من الأرشيف",
+      "meta": {
+        "title": "المستند",
+        "description": "كل ما يخص مستنداً واحداً — نصّه وسجلّه وأثره."
+      }
     }
+  },
+  "tags": {
+    "title": "الوسوم",
+    "label": "الوسوم",
+    "placeholder": "أضف وسمًا",
+    "none": "لا توجد وسوم بعد.",
+    "add": "إضافة وسوم",
+    "edit": "تعديل الوسوم",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "saved": "تم تحديث الوسوم",
+    "remove": "إزالة {name}",
+    "create": "إنشاء وسم «{name}»",
+    "createHint": "اكتب اسمًا غير موجود في القائمة لإنشائه.",
+    "noMatches": "لا توجد وسوم مطابقة.",
+    "full": "حتى {count} وسمًا",
+    "frozen": "هذا المستند مؤرشف. أخرجه من الأرشيف لتغيير وسومه."
+  },
+  "comments": {
+    "loading": "جارٍ تحميل النقاش",
+    "retry": "إعادة المحاولة",
+    "empty": "لم يُقل شيء بعد. ابدأ النقاش.",
+    "emptyReadOnly": "لم يُقل شيء عن هذا المستند بعد.",
+    "composeLabel": "إضافة تعليق",
+    "composePlaceholder": "اكتب تعليقًا…",
+    "post": "نشر",
+    "save": "حفظ",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "edited": "مُعدّل",
+    "editLabel": "تعديل التعليق",
+    "loadEarlier": "تحميل التعليقات الأقدم",
+    "remaining": "بقي {count} حرفًا",
+    "deleted": "تم حذف التعليق",
+    "deleteTitle": "حذف هذا التعليق؟",
+    "deleteBody": "لن يظهر بعد الآن في النقاش. ويبقى السجل محفوظًا.",
+    "deleteOtherBody": "لن يظهر تعليق {name} بعد الآن في النقاش. ويبقى السجل محفوظًا.",
+    "deleteSubmit": "حذف"
+  },
+  "bulk": {
+    "selectedOne": "عنصر واحد محدد",
+    "selectedMany": "{count} عناصر محددة",
+    "clear": "إلغاء التحديد",
+    "delete": "نقل إلى المهملات",
+    "restore": "استعادة",
+    "archive": "أرشفة",
+    "unarchive": "إخراج من الأرشيف",
+    "move": "نقل",
+    "tag": "وسم",
+    "allDone": "تم {done} من {total}",
+    "partial": "تم {done}، وتُخطّي {skipped}",
+    "deleteTitle": "نقل {count} مستندات إلى المهملات؟",
+    "deleteBody": "يمكن استعادتها جميعًا من المهملات لاحقًا.",
+    "deleteSubmit": "نقل إلى المهملات",
+    "moveTitle": "نقل {count} مستندات",
+    "moveLabel": "الوجهة",
+    "moveRoot": "كل الملفات (بدون مجلد)",
+    "moveSubmit": "نقل",
+    "tagTitle": "وسم {count} مستندات",
+    "tagAdd": "إضافة هذه الوسوم",
+    "tagRemove": "إزالة هذه الوسوم",
+    "tagHint": "تتغير الوسوم التي تذكرها هنا فقط. أما الوسوم الموجودة على المستند فتبقى كما هي.",
+    "tagSubmit": "تطبيق",
+    "cancel": "إلغاء",
+    "capped": "يمكن التعامل مع {count} مستندًا فقط في المرة الواحدة."
   },
   "upload": {
     "title": "رفع الملفات",
@@ -403,6 +589,10 @@
       "auth.password_reset_requested": "طلب إعادة تعيين كلمة المرور",
       "auth.password_reset_completed": "أعاد تعيين كلمة المرور",
       "auth.refresh_reuse_detected": "أُلغيت جلسته بسبب إعادة استخدام رمز",
+      "auth.invitation_accepted": "قبِل دعوة وانضم",
+      "users.invited": "دعا شخصًا إلى مساحة العمل",
+      "users.invitation_revoked": "ألغى دعوة",
+      "users.roles_changed": "غيّر أدوار عضو",
       "document.upload": "رفع مستنداً",
       "document.rename": "أعاد تسمية مستند",
       "document.move": "نقل مستنداً",
@@ -420,7 +610,19 @@
       "approval.request": "طلب اعتمادًا",
       "approval.approve": "اعتمد مستندًا",
       "approval.reject": "رفض مستندًا",
-      "approval.cancel": "سحب طلب اعتماد"
+      "approval.cancel": "سحب طلب اعتماد",
+      "document.version.add": "رفع نسخة جديدة",
+      "document.version.revert": "أعاد مستنداً إلى نسخة سابقة",
+      "document.version.download": "نزّل نسخة سابقة",
+      "document.archive": "أرشف مستنداً",
+      "document.unarchive": "أخرج مستنداً من الأرشيف",
+      "document.tags.set": "غيّر وسوم مستند",
+      "tag.create": "أنشأ وسماً",
+      "tag.update": "أعاد تسمية وسم",
+      "tag.delete": "حذف وسماً",
+      "comment.create": "علّق على مستند",
+      "comment.update": "عدّل تعليقاً",
+      "comment.delete": "حذف تعليقاً"
     }
   },
   "notifications": {
@@ -438,7 +640,9 @@
       "APPROVAL_REQUESTED": "طلب منك {actor} اعتماد {name}",
       "APPROVAL_APPROVED": "اعتمد {actor} المستند {name}",
       "APPROVAL_REJECTED": "رفض {actor} المستند {name}",
-      "APPROVAL_CANCELLED": "سحب {actor} طلب اعتماد {name}"
+      "APPROVAL_CANCELLED": "سحب {actor} طلب اعتماد {name}",
+      "DOCUMENT_COMMENTED": "علّق {actor} على {name}",
+      "DOCUMENT_VERSION_ADDED": "رفع {actor} نسخة جديدة من {name}"
     }
   },
   "search": {
