@@ -5,12 +5,14 @@ import { ApprovalsModule } from './approvals/approvals.module';
 import { AuditQueryModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtMiddleware } from './auth/jwt.middleware';
+import { CommentsModule } from './comments/comments.module';
 import { MulterExceptionFilter } from './common/errors/multer-exception.filter';
 import { PrismaExceptionFilter } from './common/errors/prisma-exception.filter';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { validateEnv } from './config/env.validation';
 import { DocumentsModule } from './documents/documents.module';
 import { EventsModule } from './events/events.module';
+import { FavoritesModule } from './favorites/favorites.module';
 import { FoldersModule } from './folders/folders.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -20,6 +22,7 @@ import { SearchModule } from './search/search.module';
 import { StorageModule } from './storage/storage.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { RolesModule } from './roles/roles.module';
+import { TagsModule } from './tags/tags.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -56,6 +59,9 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     RolesModule,
     InvitationsModule,
+    TagsModule,
+    CommentsModule,
+    FavoritesModule,
   ],
   providers: [
     /**

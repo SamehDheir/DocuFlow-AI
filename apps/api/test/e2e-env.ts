@@ -1,3 +1,6 @@
+import path from 'node:path';
+import dotenv from 'dotenv';
+
 /**
  * Environment for the e2e suite, applied before any module is imported.
  *
@@ -11,6 +14,31 @@
  * itself is driven directly, and deterministically, by processing.e2e-spec.ts.
  */
 process.env.QUEUE_WORKER_ENABLED = 'false';
+
+/**
+ * A Redis database of its own, so a DEV SERVER cannot eat the suite's jobs.
+ *
+ * The flag above only silences the workers inside THIS process. `npm run dev`
+ * runs an API with it at its default of `true`, against the same Redis and the
+ * same Postgres — so that worker happily consumes jobs these specs enqueue and
+ * walks their documents through the pipeline underneath them. The symptom is a
+ * status assertion failing against a status nothing in the test set, in
+ * whichever specs happen to lose the race, differing run to run. It looks
+ * exactly like a regression and is not one.
+ *
+ * Switching the database index isolates both the queue and the SSE bus: a job
+ * published to db 1 is invisible to a consumer subscribed on db 0. The `.env` is
+ * read here rather than left to `@nestjs/config`, because by the time that loads
+ * the connection has already been built — and dotenv never overwrites a variable
+ * that is already set, so this assignment is the one that survives.
+ */
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+if (process.env.REDIS_URL) {
+  const url = new URL(process.env.REDIS_URL);
+  url.pathname = '/1';
+  process.env.REDIS_URL = url.toString();
+}
 
 /**
  * Never let a test spend real money or depend on a vendor being up. Absent

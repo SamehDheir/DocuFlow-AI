@@ -109,3 +109,15 @@ export function fetchProfile(accessToken: string) {
 export function requestPasswordReset(input: { email: string }) {
   return post<{ ok: true }>('/auth/forgot-password', input);
 }
+
+/**
+ * Redeem a reset link.
+ *
+ * Returns no session on purpose. The API revokes every refresh token the user
+ * held — a reset is the remedy for a suspected compromise, so leaving the
+ * attacker's session alive would defeat it — and clears this browser's cookie
+ * along with the rest. Signing in again is the expected next step, not a bug.
+ */
+export function resetPassword(input: { token: string; password: string }) {
+  return post<{ ok: true }>('/auth/reset-password', input);
+}

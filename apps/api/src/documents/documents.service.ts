@@ -12,7 +12,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentStatus, type Prisma } from '@prisma/client';
+import { DocumentStatus, NotificationType, type Prisma } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import { ERROR_CODES, apiError } from '../common/errors/error-codes';
 import type { RequestContext } from '../common/http/request-context';
@@ -22,22 +22,12 @@ import { tenantCreate, type TenantGuardedClient } from '../prisma/tenant-guard';
 import { DocumentProcessingProducer } from '../queue/document-processing.producer';
 import { StorageService } from '../storage/storage.service';
 import { buildStorageKey, extensionOf } from '../storage/storage-key';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ACTIVE, IN_FLIGHT } from './document-rules';
+import type { AddVersionDto } from './dto/add-version.dto';
 import { DEFAULT_PAGE_SIZE, type ListDocumentsDto } from './dto/list-documents.dto';
 import type { UpdateDocumentDto } from './dto/update-document.dto';
 import type { UploadDocumentDto } from './dto/upload-document.dto';
-
-/**
- * Soft-delete predicate.
- *
- * `Document.deletedAt` is NOT filtered by the tenant guard — that extension
- * handles `companyId` and nothing else, deliberately, because it is the
- * security boundary and stacking a second concern into it would put every
- * cross-tenant guarantee behind a change to unrelated logic.
- *
- * So every read spells this out. The list endpoint's spec asserts a deleted
- * document never appears.
- */
-const ACTIVE = { deletedAt: null } as const;
 
 /** Types safe to render inline. Everything else downloads as an attachment. */
 /**
@@ -60,16 +50,6 @@ const INLINE_PREVIEWABLE = new Set([
   'image/gif',
   'image/webp',
   'text/plain',
-]);
-
-/**
- * Statuses that mean a worker is, or is about to be, writing to this document.
- * Re-queueing one of these would let two runs interleave on the same metadata row.
- */
-const IN_FLIGHT: ReadonlySet<DocumentStatus> = new Set([
-  DocumentStatus.PROCESSING,
-  DocumentStatus.OCR,
-  DocumentStatus.AI_ANALYSIS,
 ]);
 
 const DOCUMENT_SUMMARY = {
@@ -97,10 +77,18 @@ type DocumentRow = Prisma.DocumentGetPayload<{ select: typeof DOCUMENT_SUMMARY }
  * Only the two enums and the page count — deliberately not `extractedText` or
  * `summary`. A page of 20 scanned contracts would otherwise ship megabytes of
  * OCR text to draw twenty badges.
+ *
+ * Tags ARE included, unlike the heavy metadata, because `?tagId=` filters on
+ * them: a browser that can narrow to a label but never shows which labels a row
+ * carries leaves the filter undiscoverable, and the reader with no way to tell
+ * why a document matched. Three short columns off a join that is already indexed
+ * is a different order of cost from a page of OCR text. Same reasoning as
+ * versions for reaching them through the parent — DocumentTag has no companyId.
  */
 const DOCUMENT_LIST = {
   ...DOCUMENT_SUMMARY,
   metadata: { select: { ocrStatus: true, aiStatus: true, ocrPages: true } },
+  tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
 } satisfies Prisma.DocumentSelect;
 
 /** What multer hands over after writing the upload to a temp file. */
@@ -119,6 +107,27 @@ export interface UploadedFile {
  */
 export type DocumentView = Omit<DocumentRow, 'size'> & { size: string };
 
+/** A label as the client wants it — the tag itself, not the join row. */
+export interface TagRef {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+/** A row in the browser: the file, the caller's star, and its labels. */
+export type DocumentListItem = DocumentView & { isFavorite: boolean; tags: TagRef[] };
+
+/**
+ * The caller's own favourite row, if there is one.
+ *
+ * Selected rather than counted: `@@id([userId, documentId])` means this matches
+ * at most once, so presence IS the boolean. Reached as a nested read through
+ * Document so it rides the parent's tenant predicate — the same reason tags and
+ * versions are never queried by a bare id.
+ */
+const MINE = (userId: string) =>
+  ({ where: { userId }, select: { userId: true } }) satisfies Prisma.Document$favoritesArgs;
+
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -130,6 +139,7 @@ export class DocumentsService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly processing: DocumentProcessingProducer,
+    private readonly notifications: NotificationsService,
     config: ConfigService<Env, true>,
   ) {
     this.maxFileSize = config.get('MAX_FILE_SIZE', { infer: true });
@@ -225,6 +235,10 @@ export class DocumentsService {
             storageKey,
             size: BigInt(file.size),
             hash,
+            // Recorded per version so a later revert restores the type and
+            // filename, not just the bytes.
+            mimeType: file.mimetype,
+            originalName: file.originalname,
             uploadedById: userId,
           },
         });
@@ -277,7 +291,18 @@ export class DocumentsService {
    * already exists and is composite with companyId first, and an offset scan
    * degrades exactly where this has to hold up — deep into a large archive.
    */
-  async list(dto: ListDocumentsDto): Promise<{ items: DocumentView[]; nextCursor: string | null }> {
+  /**
+   * `userId` is here only because a favourite is private to one person.
+   *
+   * It is the caller's own id from the verified JWT, never a query parameter —
+   * `?userId=` would turn "my shortlist" into "anyone's shortlist" for every
+   * colleague in the company, which the tenant guard cannot see and would not
+   * stop. `ownerId` below is the opposite kind of field and is filterable.
+   */
+  async list(
+    dto: ListDocumentsDto,
+    userId: string,
+  ): Promise<{ items: DocumentListItem[]; nextCursor: string | null }> {
     const limit = dto.limit ?? DEFAULT_PAGE_SIZE;
     const inTrash = dto.trash === 'true';
 
@@ -286,9 +311,34 @@ export class DocumentsService {
       ...(dto.folderId === undefined
         ? {}
         : { folderId: dto.folderId === '' ? null : dto.folderId }),
-      ...(dto.status ? { status: dto.status } : {}),
+      /**
+       * Archived documents are hidden unless asked for.
+       *
+       * Spelled out here rather than folded into ACTIVE, because the two
+       * exclusions are different in kind: `deletedAt` is a soft delete that
+       * every read must honour, while this one is a default a caller may
+       * legitimately turn off. Asking for `?status=ARCHIVED` wins outright —
+       * otherwise the one filter that names the archive would return nothing.
+       */
+      ...(dto.status
+        ? { status: dto.status }
+        : inTrash || dto.includeArchived === 'true'
+          ? {}
+          : { status: { not: DocumentStatus.ARCHIVED } }),
       ...(dto.mimeType ? { mimeType: dto.mimeType } : {}),
       ...(dto.ownerId ? { ownerId: dto.ownerId } : {}),
+      /**
+       * Reached through the relation, not by querying DocumentTag directly:
+       * that join model carries no companyId, so the guard would not scope it.
+       * As a nested filter on Document it rides on the parent's tenant filter.
+       */
+      ...(dto.tagId ? { tags: { some: { tagId: dto.tagId } } } : {}),
+      /**
+       * Pinned to the caller, so this reads as "my favourites" and cannot be
+       * asked any other way. The relation filter rides on the parent's tenant
+       * predicate, exactly as the tag one does.
+       */
+      ...(dto.favorite === 'true' ? { favorites: { some: { userId } } } : {}),
       ...(dto.q ? { name: { contains: dto.q, mode: 'insensitive' as const } } : {}),
     };
 
@@ -296,7 +346,7 @@ export class DocumentsService {
     // without a second count query.
     const rows = await this.db.document.findMany({
       where,
-      select: DOCUMENT_LIST,
+      select: { ...DOCUMENT_LIST, favorites: MINE(userId) },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(dto.cursor ? { cursor: { id: dto.cursor }, skip: 1 } : {}),
@@ -305,7 +355,7 @@ export class DocumentsService {
     const items = rows.slice(0, limit);
 
     return {
-      items: items.map(toView),
+      items: items.map(toRowView),
       nextCursor: rows.length > limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
@@ -325,11 +375,12 @@ export class DocumentsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string) {
     const document = await this.db.document.findFirst({
       where: { id },
       select: {
         ...DOCUMENT_SUMMARY,
+        favorites: MINE(userId),
         metadata: {
           select: {
             title: true,
@@ -365,11 +416,26 @@ export class DocumentsService {
             size: true,
             createdAt: true,
             uploadedById: true,
+            /**
+             * v4. A history that lists only sizes and dates cannot answer the
+             * question it exists for — what changed, and by whom. `note` is the
+             * uploader's own words, `originalName` is what the file was called
+             * at that point (a .docx replaced by a .pdf reads as two different
+             * documents without it), and the uploader is joined rather than left
+             * as a bare id the client would have to resolve per row.
+             */
+            originalName: true,
+            mimeType: true,
+            note: true,
+            uploadedBy: { select: { id: true, firstName: true, lastName: true } },
           },
           orderBy: { versionNumber: 'desc' },
         },
         owner: { select: { id: true, firstName: true, lastName: true, email: true } },
         folder: { select: { id: true, name: true } },
+        // Same reasoning as versions: DocumentTag has no companyId, so it is
+        // only ever reached through the scoped parent.
+        tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
       },
     });
 
@@ -380,7 +446,7 @@ export class DocumentsService {
     }
 
     return {
-      ...toView(document),
+      ...toFavoriteView(document),
       metadata: document.metadata,
       owner: document.owner,
       folder: document.folder,
@@ -388,6 +454,8 @@ export class DocumentsService {
         ...version,
         size: version.size.toString(),
       })),
+      // Flattened out of the join rows: the client wants tags, not links.
+      tags: flattenTags(document.tags),
     };
   }
 
@@ -430,6 +498,8 @@ export class DocumentsService {
 
   async update(id: string, dto: UpdateDocumentDto, context: RequestContext): Promise<DocumentView> {
     const document = await this.mustFindActive(id);
+
+    this.assertWritable(document);
 
     if (dto.folderId) {
       await this.assertFolderExists(dto.folderId);
@@ -580,18 +650,12 @@ export class DocumentsService {
     const document = await this.mustFindActive(id);
 
     /**
-     * Refuse while it is already in flight. Not merely wasteful — two workers
-     * writing the same metadata row would interleave, and the loser's partial
-     * results would overwrite the winner's complete ones.
+     * Refused on an archived document, and this is what stops archiving from
+     * silently undoing itself: the pipeline ends with an unconditional advance
+     * to READY, so a reprocess of an archived document would un-archive it.
      */
-    if (IN_FLIGHT.has(document.status)) {
-      throw new ConflictException(
-        apiError(
-          ERROR_CODES.DOCUMENT_ALREADY_PROCESSING,
-          'That document is already being processed',
-        ),
-      );
-    }
+    this.assertWritable(document);
+    this.assertNotInFlight(document);
 
     /**
      * Clear the finished job first. The document id doubles as the BullMQ job
@@ -642,6 +706,455 @@ export class DocumentsService {
     });
 
     return toView(updated);
+  }
+
+  /**
+   * Appends a new version and makes it the document's current bytes.
+   *
+   * Follows the upload pipeline's ordering exactly (see `upload` above), because
+   * the failure modes are the same: bytes reach MinIO before any row points at
+   * them, and the enqueue happens strictly after the commit.
+   *
+   * The one addition is unwinding. `upload` can leave its row at UPLOADING for
+   * an operator to reap, but here the document already exists and is perfectly
+   * good — so a failed transaction must take the orphaned object with it rather
+   * than leave the previous version's row beside bytes nothing references.
+   */
+  async addVersion(
+    id: string,
+    file: UploadedFile,
+    dto: AddVersionDto,
+    userId: string,
+    companyId: string,
+    context: RequestContext,
+  ): Promise<DocumentView> {
+    try {
+      this.assertAcceptable(file);
+
+      const document = await this.mustFindActive(id);
+      this.assertWritable(document);
+      this.assertNotInFlight(document);
+
+      const extension = extensionOf(file.originalname);
+      const storageKey = buildStorageKey(companyId, extension);
+      const hash = await hashFile(file.path);
+
+      await this.storage.putFile(storageKey, file.path, file.mimetype);
+
+      /**
+       * Before the enqueue below, and before the transaction so a failure does
+       * not leave a cleared job with no new one behind it. The document id
+       * doubles as the BullMQ job id, so a retained completed job would make
+       * the add() a silent no-op: the row would sit at PROCESSING forever and
+       * the new bytes would never be extracted.
+       */
+      await this.processing.forget(id);
+
+      let stored: DocumentRow;
+
+      try {
+        stored = await this.replaceCurrentBytes(id, {
+          storageKey,
+          size: BigInt(file.size),
+          hash,
+          mimeType: file.mimetype,
+          extension,
+          originalName: file.originalname,
+          note: dto.note,
+          userId,
+          audit: {
+            action: 'document.version.add',
+            context,
+            extra: { name: document.name, size: file.size, mimeType: file.mimetype },
+          },
+        });
+      } catch (error) {
+        await this.storage.removeQuietly(storageKey);
+        throw error;
+      }
+
+      await this.processing.enqueue({ documentId: id, companyId, userId, reprocess: true });
+
+      await this.announceNewVersion(document.ownerId, userId, id, document.name);
+
+      return toView(stored);
+    } finally {
+      await unlink(file.path).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Restores an earlier version by appending it as a new one.
+   *
+   * History is never rewritten and the pointer is never moved backwards. Two
+   * reasons: `document_versions.storage_key` is unique, so no two rows may name
+   * one object — and an audit trail you can rewind is not an audit trail. After
+   * reverting v3 to v1 the document has four versions, and v4 says where its
+   * bytes came from.
+   */
+  async revertToVersion(
+    id: string,
+    versionId: string,
+    dto: AddVersionDto,
+    userId: string,
+    companyId: string,
+    context: RequestContext,
+  ): Promise<DocumentView> {
+    const found = await this.db.document.findFirst({
+      where: { id, ...ACTIVE },
+      select: {
+        ...DOCUMENT_SUMMARY,
+        // Reached through the parent: DocumentVersion has no companyId of its
+        // own, so a direct query on a client-supplied version id would escape
+        // tenant isolation entirely.
+        versions: {
+          where: { id: versionId },
+          select: {
+            versionNumber: true,
+            storageKey: true,
+            size: true,
+            hash: true,
+            mimeType: true,
+            originalName: true,
+          },
+        },
+      },
+    });
+
+    if (!found) {
+      throw new NotFoundException(
+        apiError(ERROR_CODES.DOCUMENT_NOT_FOUND, 'That document does not exist'),
+      );
+    }
+
+    this.assertWritable(found);
+    this.assertNotInFlight(found);
+
+    const target = found.versions[0];
+
+    if (!target) {
+      throw new NotFoundException(
+        apiError(ERROR_CODES.VERSION_NOT_FOUND, 'That version does not exist'),
+      );
+    }
+
+    const storageKey = buildStorageKey(companyId, extensionOf(target.originalName));
+
+    // Copied server-side inside MinIO, so the bytes never pass through this
+    // process — reverting a 100 MB scan costs no memory here.
+    await this.storage.copyObject(target.storageKey, storageKey);
+
+    await this.processing.forget(id);
+
+    let stored: DocumentRow;
+
+    try {
+      stored = await this.replaceCurrentBytes(id, {
+        storageKey,
+        size: target.size,
+        hash: target.hash,
+        mimeType: target.mimeType,
+        extension: extensionOf(target.originalName),
+        originalName: target.originalName,
+        note: dto.note,
+        userId,
+        audit: {
+          action: 'document.version.revert',
+          context,
+          extra: { name: found.name, fromVersion: target.versionNumber },
+        },
+      });
+    } catch (error) {
+      await this.storage.removeQuietly(storageKey);
+      throw error;
+    }
+
+    await this.processing.enqueue({ documentId: id, companyId, userId, reprocess: true });
+
+    await this.announceNewVersion(found.ownerId, userId, id, found.name);
+
+    return toView(stored);
+  }
+
+  /** Opens one historical version's bytes. The document is the tenant check. */
+  async openVersionForDownload(
+    id: string,
+    versionId: string,
+    context: RequestContext,
+  ): Promise<{
+    stream: Readable;
+    version: { versionNumber: number; size: bigint; mimeType: string; originalName: string };
+  }> {
+    const document = await this.db.document.findFirst({
+      where: { id, ...ACTIVE },
+      select: {
+        id: true,
+        name: true,
+        versions: {
+          where: { id: versionId },
+          select: {
+            versionNumber: true,
+            storageKey: true,
+            size: true,
+            mimeType: true,
+            originalName: true,
+          },
+        },
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException(
+        apiError(ERROR_CODES.DOCUMENT_NOT_FOUND, 'That document does not exist'),
+      );
+    }
+
+    const version = document.versions[0];
+
+    if (!version) {
+      throw new NotFoundException(
+        apiError(ERROR_CODES.VERSION_NOT_FOUND, 'That version does not exist'),
+      );
+    }
+
+    const stream = await this.storage.getStream(version.storageKey);
+
+    await this.audit.record({
+      action: 'document.version.download',
+      entityType: 'Document',
+      entityId: id,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: { name: document.name, versionNumber: version.versionNumber },
+    });
+
+    return { stream, version };
+  }
+
+  /**
+   * Freezes a document out of the active listing without deleting it.
+   *
+   * Archive is a status, so it survives nothing else: `remove()` overwrites
+   * status with DELETED and `restore()` unconditionally sets READY, which means
+   * archiving is lost across a trip through the trash. Preserving it would need
+   * a column recording the status before deletion, which is not worth carrying
+   * for a combination nobody has asked for. Restoring from trash lands at READY
+   * and can be archived again.
+   */
+  async archive(id: string, context: RequestContext): Promise<DocumentView> {
+    const document = await this.mustFindActive(id);
+
+    if (document.status === DocumentStatus.ARCHIVED) {
+      throw new ConflictException(
+        apiError(ERROR_CODES.DOCUMENT_ALREADY_ARCHIVED, 'That document is already archived'),
+      );
+    }
+
+    /**
+     * Refused mid-pipeline, and this is not a nicety.
+     *
+     * The processing run ends with an unconditional advance to READY, so a
+     * document archived while a worker held it would quietly un-archive itself
+     * when that worker finished — with nothing in the audit trail to explain it.
+     */
+    this.assertNotInFlight(document);
+
+    const updated = await this.db.document.update({
+      where: { id },
+      data: { status: DocumentStatus.ARCHIVED },
+      select: DOCUMENT_SUMMARY,
+    });
+
+    await this.audit.record({
+      action: 'document.archive',
+      entityType: 'Document',
+      entityId: id,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: { name: document.name },
+    });
+
+    return toView(updated);
+  }
+
+  async unarchive(id: string, context: RequestContext): Promise<DocumentView> {
+    const document = await this.mustFindActive(id);
+
+    if (document.status !== DocumentStatus.ARCHIVED) {
+      throw new ConflictException(
+        apiError(ERROR_CODES.DOCUMENT_NOT_ARCHIVED, 'That document is not archived'),
+      );
+    }
+
+    const updated = await this.db.document.update({
+      where: { id },
+      data: { status: DocumentStatus.READY },
+      select: DOCUMENT_SUMMARY,
+    });
+
+    await this.audit.record({
+      action: 'document.unarchive',
+      entityType: 'Document',
+      entityId: id,
+      ipAddress: context.ipAddress,
+      userAgent: context.userAgent,
+      metadata: { name: document.name },
+    });
+
+    return toView(updated);
+  }
+
+  /**
+   * The half `addVersion` and `revertToVersion` share: append the version row
+   * and repoint the document at it, in one transaction.
+   *
+   * The version is created as a NESTED write through `document.update` rather
+   * than as `documentVersion.create`. DocumentVersion is only transitively
+   * scoped, so the guard waves a direct write through unfiltered; going through
+   * the parent means the tenant filter on `document.update` covers both.
+   */
+  private async replaceCurrentBytes(
+    id: string,
+    input: {
+      storageKey: string;
+      size: bigint;
+      hash: string | null;
+      mimeType: string;
+      extension: string;
+      originalName: string;
+      note?: string;
+      userId: string;
+      audit: { action: string; context: RequestContext; extra: Record<string, unknown> };
+    },
+  ): Promise<DocumentRow> {
+    return this.db.$transaction(async (tx) => {
+      const parent = await tx.document.findFirst({
+        where: { id },
+        select: {
+          versions: {
+            select: { versionNumber: true },
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      /**
+       * Read inside the transaction, but the real guarantee is the
+       * `@@unique([documentId, versionNumber])` behind it: two uploads racing
+       * at READ COMMITTED can both compute the same next number, and the loser
+       * fails with P2002, which PrismaExceptionFilter turns into a 409. That is
+       * the correct answer — one of the two uploads genuinely did not happen.
+       */
+      const versionNumber = (parent?.versions[0]?.versionNumber ?? 0) + 1;
+
+      const updated = await tx.document.update({
+        where: { id },
+        data: {
+          storageKey: input.storageKey,
+          size: input.size,
+          hash: input.hash,
+          mimeType: input.mimeType,
+          extension: input.extension,
+          originalName: input.originalName,
+          status: DocumentStatus.PROCESSING,
+          versions: {
+            create: {
+              versionNumber,
+              storageKey: input.storageKey,
+              size: input.size,
+              hash: input.hash,
+              mimeType: input.mimeType,
+              originalName: input.originalName,
+              note: input.note ?? null,
+              uploadedById: input.userId,
+            },
+          },
+          /**
+           * Reset both steps: the bytes changed, so the previous run's summary
+           * and extracted text describe a file that is no longer being served.
+           */
+          metadata: {
+            upsert: {
+              create: { ocrStatus: 'QUEUED', aiStatus: 'PENDING' },
+              update: { ocrStatus: 'QUEUED', ocrError: null, aiStatus: 'PENDING', aiError: null },
+            },
+          },
+        },
+        select: DOCUMENT_SUMMARY,
+      });
+
+      await this.audit.record(
+        {
+          action: input.audit.action,
+          entityType: 'Document',
+          entityId: id,
+          ipAddress: input.audit.context.ipAddress,
+          userAgent: input.audit.context.userAgent,
+          metadata: { ...input.audit.extra, versionNumber },
+        },
+        tx,
+      );
+
+      return updated;
+    });
+  }
+
+  /** Tells the owner someone else replaced their file. Never tells the actor. */
+  private async announceNewVersion(
+    ownerId: string,
+    actorId: string,
+    documentId: string,
+    name: string,
+  ): Promise<void> {
+    if (ownerId === actorId) {
+      return;
+    }
+
+    await this.notifications.create({
+      userId: ownerId,
+      type: NotificationType.DOCUMENT_VERSION_ADDED,
+      actorId,
+      entityType: 'Document',
+      entityId: documentId,
+      payload: { name, documentId },
+    });
+  }
+
+  /**
+   * Archive is read-only.
+   *
+   * Applied to every write that changes what the document IS — renaming,
+   * re-filing, new versions, reverts, reprocessing. Deliberately NOT applied to
+   * reading, downloading, commenting, or moving to the trash: freezing a record
+   * is not the same as sealing it away, and an archived document that could not
+   * be deleted would be a document nobody could ever get rid of.
+   */
+  private assertWritable(document: Pick<DocumentRow, 'status'>): void {
+    if (document.status === DocumentStatus.ARCHIVED) {
+      throw new ConflictException(
+        apiError(
+          ERROR_CODES.DOCUMENT_ARCHIVED,
+          'That document is archived. Restore it before making changes.',
+        ),
+      );
+    }
+  }
+
+  /**
+   * Refuses while a worker is, or is about to be, writing to this document.
+   * Two runs on one metadata row interleave, and the loser's partial results
+   * overwrite the winner's complete ones.
+   */
+  private assertNotInFlight(document: Pick<DocumentRow, 'status'>): void {
+    if (IN_FLIGHT.has(document.status)) {
+      throw new ConflictException(
+        apiError(
+          ERROR_CODES.DOCUMENT_ALREADY_PROCESSING,
+          'That document is already being processed',
+        ),
+      );
+    }
   }
 
   private async mustFindActive(id: string): Promise<DocumentRow> {
@@ -716,4 +1229,38 @@ async function hashFile(path: string): Promise<string> {
 
 function toView<T extends { size: bigint }>(row: T): Omit<T, 'size'> & { size: string } {
   return { ...row, size: row.size.toString() };
+}
+
+/**
+ * Collapses the nested favourite row into a flag and drops it from the payload.
+ *
+ * The client wants `isFavorite: true`, not `favorites: [{ userId: '…' }]` — and
+ * shipping the raw rows would put the reader's own id in every list response for
+ * no reason.
+ */
+function toFavoriteView<T extends { size: bigint; favorites: unknown[] }>(row: T) {
+  const { favorites, ...rest } = row;
+
+  return { ...rest, size: rest.size.toString(), isFavorite: favorites.length > 0 };
+}
+
+/**
+ * Flattens the tag join rows into the labels themselves.
+ *
+ * Sorted by name, and shared with `findOne` rather than written twice, because
+ * the join has no ordering of its own: two surfaces sorting differently would
+ * show one document's chips in one order in the list and another on the detail
+ * page, which reads as a change that never happened.
+ */
+function flattenTags(links: { tag: TagRef }[]): TagRef[] {
+  return links.map((link) => link.tag).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The list row, with both join shapes collapsed to what the browser draws. */
+function toRowView<T extends { size: bigint; favorites: unknown[]; tags: { tag: TagRef }[] }>(
+  row: T,
+) {
+  const { tags, ...rest } = toFavoriteView(row);
+
+  return { ...rest, tags: flattenTags(tags) };
 }

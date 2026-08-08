@@ -40,4 +40,34 @@ describe('permission catalogue', () => {
     expect(member?.permissions.every((permission) => admin.has(permission))).toBe(true);
     expect(member?.permissions.length).toBeLessThan(admin.size);
   });
+
+  /**
+   * The v4 split, asserted explicitly rather than left to the subset rule above.
+   *
+   * Both distinctions are easy to erase by "tidying" the Member array, and both
+   * are the point: a tag name is a company-wide shared namespace where a rename
+   * relabels every document carrying it, and deleting a colleague's comment is
+   * moderation rather than participation.
+   */
+  it('lets Member join in without owning the vocabulary or the thread', () => {
+    const member = new Set<string>(
+      DEFAULT_ROLES.find((role) => role.name === 'Member')?.permissions,
+    );
+
+    expect(member.has('tags.read')).toBe(true);
+    expect(member.has('comments.create')).toBe(true);
+
+    expect(member.has('tags.manage')).toBe(false);
+    expect(member.has('comments.moderate')).toBe(false);
+  });
+
+  /**
+   * There is no `comments.read`. Reading a discussion rides on `documents.read`,
+   * so anyone who can open a document can see what was said about it; a separate
+   * read permission would only produce documents whose comment count is visible
+   * but whose comments are not.
+   */
+  it('does not introduce a separate comment read permission', () => {
+    expect(names).not.toContain('comments.read');
+  });
 });

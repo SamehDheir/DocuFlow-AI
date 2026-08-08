@@ -38,6 +38,14 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Must match the API's MAX_FILE_SIZE. The browser checks the file size before it
+# starts sending, so a value lower than the server's rejects valid uploads and a
+# value higher trades a clean 413 for a connection reset mid-transfer. Left
+# unset, lib/documents.ts falls back to 100 MB — which silently pins every image
+# to that ceiling however the API is configured.
+ARG NEXT_PUBLIC_MAX_FILE_SIZE
+ENV NEXT_PUBLIC_MAX_FILE_SIZE=${NEXT_PUBLIC_MAX_FILE_SIZE}
+
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build --workspace=@docuflow/web

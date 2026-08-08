@@ -6,10 +6,12 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentStatus } from '@prisma/client';
 import type { AuditService } from '../common/audit/audit.service';
 import type { Env } from '../config/env.validation';
+import type { NotificationsService } from '../notifications/notifications.service';
 import type { TenantGuardedClient } from '../prisma/tenant-guard';
 import type { DocumentProcessingProducer } from '../queue/document-processing.producer';
 import type { StorageService } from '../storage/storage.service';
 import { DocumentsService, type UploadedFile } from './documents.service';
+import { DocumentStatusFilter } from './dto/list-documents.dto';
 
 const COMPANY = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 const USER = 'b1a7f4c2-0000-4000-8000-000000000001';
@@ -46,14 +48,34 @@ interface DocRow {
   deletedAt: Date | null;
 }
 
+interface VersionRow {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  storageKey: string;
+  size: bigint;
+  hash: string | null;
+  mimeType: string;
+  originalName: string;
+  note: string | null;
+  uploadedById: string;
+  createdAt: Date;
+}
+
 /**
  * In-memory client, in the style of token.service.spec.ts. Reads return copies
  * so an update cannot mutate a snapshot the service is still holding.
+ *
+ * Versions are modelled through the DOCUMENT delegate, matching how the service
+ * reaches them: DocumentVersion carries no companyId, so the real guard leaves a
+ * direct query unfiltered and the service always goes through the parent. A
+ * fake that offered a convenient `documentVersion.findFirst` would let a spec
+ * pass against code the tenant guard would not protect.
  */
 function createDb() {
   const documents: DocRow[] = [];
   const folders: { id: string }[] = [];
-  const versions: { documentId: string; versionNumber: number }[] = [];
+  const versions: VersionRow[] = [];
 
   const copy = <T>(row: T): T => ({ ...row });
 
@@ -71,6 +93,49 @@ function createDb() {
       return actual === expected;
     });
 
+  /** Resolves a `select.versions` clause against the version table. */
+  const selectVersions = (
+    documentId: string,
+    clause: { where?: { id?: string }; orderBy?: unknown; take?: number },
+  ): VersionRow[] => {
+    let rows = versions.filter((version) => version.documentId === documentId);
+
+    if (clause.where?.id) {
+      rows = rows.filter((version) => version.id === clause.where?.id);
+    }
+
+    // Every caller orders by versionNumber desc; nothing needs the general case.
+    rows = [...rows].sort((a, b) => b.versionNumber - a.versionNumber);
+
+    return (clause.take ? rows.slice(0, clause.take) : rows).map(copy);
+  };
+
+  /**
+   * Applies the parts of a `select` these specs actually depend on.
+   *
+   * `favorites` and `tags` are answered with empty arrays rather than modelled:
+   * this fake has no rows for either, and a relation filter (`{ some: { … } }`)
+   * is the kind of thing a hand-written fake gets subtly wrong. The star, the
+   * chips, and the `?favorite=` / `?tagId=` filters are covered end to end
+   * instead, against the real query.
+   *
+   * They are answered at all — rather than left off — because the service
+   * flattens both unconditionally, so an absent array is a TypeError rather than
+   * a missing field. That is the failure mode worth keeping: a projection that
+   * grows a join and forgets to select it should break here, loudly.
+   */
+  const projected = (row: DocRow, select?: Record<string, unknown>) => {
+    const clause = select?.versions as
+      { where?: { id?: string }; orderBy?: unknown; take?: number } | undefined;
+
+    return {
+      ...copy(row),
+      ...(clause ? { versions: selectVersions(row.id, clause) } : {}),
+      ...(select?.favorites ? { favorites: [] } : {}),
+      ...(select?.tags ? { tags: [] } : {}),
+    };
+  };
+
   const document = {
     create: ({ data }: { data: Record<string, unknown> }) => {
       const row = {
@@ -83,22 +148,67 @@ function createDb() {
       documents.push(row);
       return Promise.resolve(copy(row));
     },
-    findFirst: ({ where }: { where?: Record<string, unknown> }) => {
+    findFirst: ({
+      where,
+      select,
+    }: {
+      where?: Record<string, unknown>;
+      select?: Record<string, unknown>;
+    }) => {
       const row = documents.find((candidate) => matches(candidate, where));
-      return Promise.resolve(row ? copy(row) : null);
+      return Promise.resolve(row ? projected(row, select) : null);
     },
-    findMany: ({ where, take }: { where?: Record<string, unknown>; take?: number }) =>
+    findMany: ({
+      where,
+      select,
+      take,
+    }: {
+      where?: Record<string, unknown>;
+      select?: Record<string, unknown>;
+      take?: number;
+    }) =>
       Promise.resolve(
         documents
           .filter((row) => matches(row, where))
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
           .slice(0, take)
-          .map(copy),
+          .map((row) => projected(row, select)),
       ),
-    update: ({ where, data }: { where: { id: string }; data: Partial<DocRow> }) => {
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Partial<DocRow> & {
+        versions?: { create?: Omit<VersionRow, 'id' | 'documentId' | 'createdAt'> };
+        metadata?: unknown;
+      };
+    }) => {
       const row = documents.find((candidate) => candidate.id === where.id);
       if (!row) throw new Error('not found');
-      Object.assign(row, data, { updatedAt: new Date() });
+
+      /**
+       * Nested writes are applied by hand: the real client resolves these
+       * relations, and the service uses them precisely because going through
+       * the scoped parent is what keeps the tenant filter on.
+       *
+       * `metadata` is dropped rather than modelled — nothing in these specs
+       * reads OCR or AI state, and the upsert shape would be pure ceremony.
+       */
+      const { versions: nested, ...rest } = data;
+      const { metadata, ...scalars } = rest;
+      void metadata;
+
+      if (nested?.create) {
+        versions.push({
+          ...nested.create,
+          id: randomUUID(),
+          documentId: where.id,
+          createdAt: new Date(),
+        });
+      }
+
+      Object.assign(row, scalars, { updatedAt: new Date() });
       return Promise.resolve(copy(row));
     },
     count: ({ where }: { where?: Record<string, unknown> }) =>
@@ -119,10 +229,15 @@ function createDb() {
       findFirst: ({ where }: { where?: Record<string, unknown> }) =>
         Promise.resolve(folders.find((row) => matches(row, where)) ?? null),
     },
+    /**
+     * Only `create`, and only because the v1 upload path still writes version 1
+     * this way. Every v4 read and write goes through the document delegate.
+     */
     documentVersion: {
-      create: ({ data }: { data: { documentId: string; versionNumber: number } }) => {
-        versions.push(data);
-        return Promise.resolve(data);
+      create: ({ data }: { data: Omit<VersionRow, 'id' | 'createdAt'> }) => {
+        const row = { ...data, id: randomUUID(), createdAt: new Date() };
+        versions.push(row);
+        return Promise.resolve(row);
       },
     },
     $transaction: <T>(fn: (tx: unknown) => Promise<T>) => fn(db),
@@ -135,6 +250,7 @@ interface StorageMock {
   putFile: jest.Mock;
   getStream: jest.Mock;
   removeQuietly: jest.Mock;
+  copyObject: jest.Mock;
 }
 
 async function setup(storageOverrides: Partial<StorageMock> = {}) {
@@ -146,6 +262,7 @@ async function setup(storageOverrides: Partial<StorageMock> = {}) {
     putFile: jest.fn().mockResolvedValue(undefined),
     getStream: jest.fn().mockResolvedValue({ pipe: jest.fn() }),
     removeQuietly: jest.fn().mockResolvedValue(undefined),
+    copyObject: jest.fn().mockResolvedValue(undefined),
     ...storageOverrides,
   };
 
@@ -163,17 +280,72 @@ async function setup(storageOverrides: Partial<StorageMock> = {}) {
     forget: jest.fn().mockResolvedValue(undefined),
   };
 
+  /**
+   * Notifications are stubbed for the same reason as the queue: who gets told
+   * about a new version is asserted where the recipient rules live, not in the
+   * specs about upload ordering and storage failure handling.
+   */
+  const notifications: { create: jest.Mock } = {
+    create: jest.fn().mockResolvedValue(undefined),
+  };
+
   const service = new DocumentsService(
     db as unknown as TenantGuardedClient,
     storage as unknown as StorageService,
     audit as unknown as AuditService,
     processing as unknown as DocumentProcessingProducer,
+    notifications as unknown as NotificationsService,
     config,
   );
 
   const dir = await mkdtemp(join(tmpdir(), 'docuflow-spec-'));
 
-  return { service, audit, storage, processing, documents, folders, versions, dir };
+  return {
+    service,
+    audit,
+    storage,
+    processing,
+    notifications,
+    db,
+    documents,
+    folders,
+    versions,
+    dir,
+  };
+}
+
+/**
+ * Stands in for the worker finishing.
+ *
+ * `upload` deliberately leaves the document at PROCESSING, and archive refuses
+ * anything a worker still holds — so any archive test has to get the document
+ * to a settled state first.
+ */
+function settle(documents: DocRow[], id: string): void {
+  const row = documents.find((candidate) => candidate.id === id);
+
+  if (!row) {
+    throw new Error(`no document ${id} to settle`);
+  }
+
+  row.status = DocumentStatus.READY;
+}
+
+/**
+ * Upload and then settle — the starting point for anything that writes to an
+ * existing document, since a new version, a revert and an archive are all
+ * refused while a worker still holds it.
+ */
+async function uploadSettled(
+  service: DocumentsService,
+  documents: DocRow[],
+  dir: string,
+  options?: { name?: string; type?: string; bytes?: string },
+) {
+  const uploaded = await service.upload(await fakeUpload(dir, options), {}, USER, CONTEXT, COMPANY);
+  settle(documents, uploaded.id);
+
+  return uploaded;
 }
 
 /** Writes a temp file that stands in for what multer would have produced. */
@@ -341,7 +513,7 @@ describe('DocumentsService', () => {
       const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
       await service.remove(uploaded.id, CONTEXT);
 
-      const { items } = await service.list({});
+      const { items } = await service.list({}, USER);
 
       expect(items).toEqual([]);
     });
@@ -351,7 +523,7 @@ describe('DocumentsService', () => {
       const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
       await service.remove(uploaded.id, CONTEXT);
 
-      const { items } = await service.list({ trash: 'true' });
+      const { items } = await service.list({ trash: 'true' }, USER);
 
       expect(items.map((item) => item.id)).toEqual([uploaded.id]);
     });
@@ -460,6 +632,262 @@ describe('DocumentsService', () => {
       await expect(
         service.openForDownload(uploaded.id, CONTEXT, { inline: false }),
       ).rejects.toThrow(/does not exist/);
+    });
+  });
+
+  describe('addVersion', () => {
+    it('numbers from the current maximum rather than a literal', async () => {
+      const { service, documents, versions, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir);
+
+      await service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT);
+      settle(documents, uploaded.id);
+      await service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT);
+
+      expect(versions.map((version) => version.versionNumber)).toEqual([1, 2, 3]);
+    });
+
+    /**
+     * A new version is refused while a worker still holds the document, for the
+     * same reason a reprocess is: two runs would interleave on one metadata row.
+     */
+    it('refuses while the document is still being processed', async () => {
+      const { service, dir } = await setup();
+      // upload leaves it at PROCESSING, deliberately unsettled here.
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+
+      await expect(
+        service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT),
+      ).rejects.toThrow(/already being processed/);
+    });
+
+    it('repoints the document at the new bytes', async () => {
+      const { service, documents, versions, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir);
+      const first = documents[0].storageKey;
+
+      await service.addVersion(
+        uploaded.id,
+        await fakeUpload(dir, { name: 'revised.pdf', bytes: 'longer contents' }),
+        { note: 'second draft' },
+        USER,
+        COMPANY,
+        CONTEXT,
+      );
+
+      const row = documents[0];
+
+      expect(row.storageKey).not.toBe(first);
+      expect(row.originalName).toBe('revised.pdf');
+      expect(row.size).toBe(BigInt('longer contents'.length));
+      // Back to the pipeline: the bytes changed, so the stored summary and
+      // extracted text describe a file that is no longer being served.
+      expect(row.status).toBe(DocumentStatus.PROCESSING);
+      // Each version keeps its own immutable object.
+      expect(new Set(versions.map((version) => version.storageKey)).size).toBe(2);
+      expect(versions.at(-1)?.note).toBe('second draft');
+    });
+
+    /**
+     * The document id doubles as the BullMQ job id. Without this the add() is
+     * silently ignored while a completed job is still retained, the row sits at
+     * PROCESSING forever, and the new bytes are never extracted.
+     */
+    it('clears the finished job before re-enqueueing', async () => {
+      const { service, processing, documents, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir);
+
+      processing.forget.mockClear();
+      processing.enqueue.mockClear();
+
+      await service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT);
+
+      expect(processing.forget).toHaveBeenCalledWith(uploaded.id);
+      expect(processing.forget.mock.invocationCallOrder[0]).toBeLessThan(
+        processing.enqueue.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('takes the orphaned object with it when the write fails', async () => {
+      const { service, storage, db, documents, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir);
+
+      jest.spyOn(db.document, 'update').mockImplementationOnce(() => {
+        throw new Error('constraint violation');
+      });
+
+      await expect(
+        service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT),
+      ).rejects.toThrow(/constraint violation/);
+
+      // The document still points at version 1's bytes, so the ones just
+      // uploaded are referenced by nothing.
+      expect(storage.removeQuietly).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('revertToVersion', () => {
+    it('appends a new version instead of rewinding to the old one', async () => {
+      const { service, storage, documents, versions, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir, { name: 'original.pdf' });
+      const firstKey = documents[0].storageKey;
+
+      await service.addVersion(
+        uploaded.id,
+        await fakeUpload(dir, { name: 'replacement.txt', type: 'text/plain' }),
+        {},
+        USER,
+        COMPANY,
+        CONTEXT,
+      );
+      settle(documents, uploaded.id);
+
+      const target = versions[0];
+      await service.revertToVersion(uploaded.id, target.id, {}, USER, COMPANY, CONTEXT);
+
+      // Three rows, not two: history is append-only.
+      expect(versions.map((version) => version.versionNumber)).toEqual([1, 2, 3]);
+
+      // The bytes were copied to a fresh key rather than re-pointed at, because
+      // document_versions.storage_key is unique.
+      expect(storage.copyObject).toHaveBeenCalledTimes(1);
+      const [source, destination] = storage.copyObject.mock.calls[0] as [string, string];
+      expect(source).toBe(firstKey);
+      expect(destination).not.toBe(firstKey);
+      expect(documents[0].storageKey).toBe(destination);
+    });
+
+    it('restores the type and filename, not just the bytes', async () => {
+      const { service, documents, versions, dir } = await setup();
+      const uploaded = await uploadSettled(service, documents, dir, {
+        name: 'original.pdf',
+        type: 'application/pdf',
+      });
+
+      await service.addVersion(
+        uploaded.id,
+        await fakeUpload(dir, { name: 'notes.txt', type: 'text/plain' }),
+        {},
+        USER,
+        COMPANY,
+        CONTEXT,
+      );
+      settle(documents, uploaded.id);
+
+      expect(documents[0].mimeType).toBe('text/plain');
+
+      await service.revertToVersion(uploaded.id, versions[0].id, {}, USER, COMPANY, CONTEXT);
+
+      expect(documents[0].mimeType).toBe('application/pdf');
+      expect(documents[0].originalName).toBe('original.pdf');
+      expect(documents[0].extension).toBe('pdf');
+    });
+
+    it('404s a version id belonging to another document', async () => {
+      const { service, documents, versions, dir } = await setup();
+      const a = await uploadSettled(service, documents, dir);
+      await uploadSettled(service, documents, dir);
+
+      // Version 1 of the SECOND document, asked for against the first.
+      const foreign = versions[1];
+
+      await expect(
+        service.revertToVersion(a.id, foreign.id, {}, USER, COMPANY, CONTEXT),
+      ).rejects.toThrow(/version does not exist/);
+    });
+  });
+
+  describe('archive', () => {
+    it('moves to ARCHIVED and back to READY', async () => {
+      const { service, documents, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+      settle(documents, uploaded.id);
+
+      const archived = await service.archive(uploaded.id, CONTEXT);
+      expect(archived.status).toBe(DocumentStatus.ARCHIVED);
+
+      const restored = await service.unarchive(uploaded.id, CONTEXT);
+      expect(restored.status).toBe(DocumentStatus.READY);
+    });
+
+    it('refuses to archive twice, or to unarchive what is not archived', async () => {
+      const { service, documents, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+      settle(documents, uploaded.id);
+
+      await expect(service.unarchive(uploaded.id, CONTEXT)).rejects.toThrow(/not archived/);
+
+      await service.archive(uploaded.id, CONTEXT);
+
+      await expect(service.archive(uploaded.id, CONTEXT)).rejects.toThrow(/already archived/);
+    });
+
+    /**
+     * The pipeline ends with an unconditional advance to READY, so a document
+     * archived while a worker held it would quietly un-archive itself when that
+     * worker finished — with nothing in the audit trail to explain it.
+     */
+    it('refuses while a worker still has the document', async () => {
+      const { service, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+
+      // upload leaves it at PROCESSING.
+      await expect(service.archive(uploaded.id, CONTEXT)).rejects.toThrow(
+        /already being processed/,
+      );
+    });
+
+    it('is read-only: every write is refused while archived', async () => {
+      const { service, documents, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+      settle(documents, uploaded.id);
+      await service.archive(uploaded.id, CONTEXT);
+
+      await expect(service.update(uploaded.id, { name: 'new name' }, CONTEXT)).rejects.toThrow(
+        /archived/,
+      );
+      await expect(service.reprocess(uploaded.id, USER, COMPANY, CONTEXT)).rejects.toThrow(
+        /archived/,
+      );
+      await expect(
+        service.addVersion(uploaded.id, await fakeUpload(dir), {}, USER, COMPANY, CONTEXT),
+      ).rejects.toThrow(/archived/);
+    });
+
+    /**
+     * Reading, downloading and binning an archived document all still work.
+     * Freezing a record is not sealing it away, and one that could not be
+     * deleted would be a document nobody could ever get rid of.
+     */
+    it('still allows reads and deletion', async () => {
+      const { service, documents, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+      settle(documents, uploaded.id);
+      await service.archive(uploaded.id, CONTEXT);
+
+      await expect(
+        service.openForDownload(uploaded.id, CONTEXT, { inline: false }),
+      ).resolves.toBeDefined();
+      await expect(service.remove(uploaded.id, CONTEXT)).resolves.toBeDefined();
+    });
+
+    it('is hidden from the default list but reachable two ways', async () => {
+      const { service, documents, dir } = await setup();
+      const uploaded = await service.upload(await fakeUpload(dir), {}, USER, CONTEXT, COMPANY);
+      settle(documents, uploaded.id);
+      await service.archive(uploaded.id, CONTEXT);
+
+      await expect(service.list({}, USER)).resolves.toMatchObject({ items: [] });
+
+      await expect(service.list({ includeArchived: 'true' }, USER)).resolves.toMatchObject({
+        items: [{ id: uploaded.id }],
+      });
+
+      await expect(
+        service.list({ status: DocumentStatusFilter.ARCHIVED }, USER),
+      ).resolves.toMatchObject({
+        items: [{ id: uploaded.id }],
+      });
     });
   });
 });

@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { DocumentStatus } from '@prisma/client';
 import { AuditService } from '../common/audit/audit.service';
 import { ERROR_CODES, apiError } from '../common/errors/error-codes';
 import type { RequestContext } from '../common/http/request-context';
@@ -118,10 +119,15 @@ export class FoldersService {
        * `deletedAt: null` is spelled out because the tenant guard handles
        * companyId only; a trashed file must not still be counted against the
        * folder it came from.
+       *
+       * ARCHIVED is excluded for the same reason, and the two must stay in step
+       * with the document list's default filter: a badge reading "12" over a
+       * folder that opens to show 9 documents reads as a counting bug, and the
+       * reader has no way to discover that three of them are archived.
        */
       this.db.document.groupBy({
         by: ['folderId'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, status: { not: DocumentStatus.ARCHIVED } },
         _count: { _all: true },
       }),
     ]);
@@ -150,7 +156,11 @@ export class FoldersService {
         orderBy: { name: 'asc' },
       }),
       this.breadcrumbFor(folder),
-      this.db.document.count({ where: { folderId: id, deletedAt: null } }),
+      // Same predicate as the tree count above, and as the document list's
+      // default filter. All three have to agree or the numbers contradict.
+      this.db.document.count({
+        where: { folderId: id, deletedAt: null, status: { not: DocumentStatus.ARCHIVED } },
+      }),
     ]);
 
     return { folder, children, breadcrumb, documentCount };

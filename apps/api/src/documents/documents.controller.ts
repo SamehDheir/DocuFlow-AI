@@ -23,6 +23,7 @@ import { ERROR_CODES, apiError } from '../common/errors/error-codes';
 import { contextOf } from '../common/http/request-context';
 import { contentDisposition } from './content-disposition';
 import { DocumentsService, type UploadedFile } from './documents.service';
+import { AddVersionDto } from './dto/add-version.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -61,16 +62,21 @@ export class DocumentsController {
     return this.documents.stats();
   }
 
+  /**
+   * The caller's own id is passed for favourites, which are per-person rather
+   * than per-company. It comes from the verified token; there is deliberately no
+   * `?userId=` to read someone else's shortlist with.
+   */
   @Get()
   @RequirePermissions('documents.read')
-  list(@Query() query: ListDocumentsDto) {
-    return this.documents.list(query);
+  list(@Query() query: ListDocumentsDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.documents.list(query, user.sub);
   }
 
   @Get(':id')
   @RequirePermissions('documents.read')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.documents.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.documents.findOne(id, user.sub);
   }
 
   @Get(':id/download')
@@ -131,6 +137,101 @@ export class DocumentsController {
     @Req() request: Request,
   ) {
     return this.documents.reprocess(id, user.sub, user.companyId, contextOf(request));
+  }
+
+  /**
+   * Appends a new version and makes it current.
+   *
+   * Requires BOTH permissions, and PermissionsGuard ANDs the list. It is an
+   * upload — it consumes storage and runs the whole extraction pipeline — and
+   * it is also a rewrite of what every colleague sees when they open the
+   * document. Neither authority alone should be enough.
+   */
+  @Post(':id/versions')
+  @RequirePermissions('documents.create', 'documents.update')
+  @UseInterceptors(FileInterceptor('file'))
+  addVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFileParam() file: UploadedFile | undefined,
+    @Body() dto: AddVersionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        apiError(ERROR_CODES.FILE_REQUIRED, 'A file is required', { file: 'Choose a file first' }),
+      );
+    }
+
+    return this.documents.addVersion(id, file, dto, user.sub, user.companyId, contextOf(request));
+  }
+
+  @Post(':id/versions/:versionId/revert')
+  @RequirePermissions('documents.create', 'documents.update')
+  revertToVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
+    @Body() dto: AddVersionDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.documents.revertToVersion(
+      id,
+      versionId,
+      dto,
+      user.sub,
+      user.companyId,
+      contextOf(request),
+    );
+  }
+
+  /**
+   * Download only — no inline preview of an old version.
+   *
+   * Preview is a hardened surface (see `send` below: sandbox CSP, nosniff, and
+   * a client that re-types the blob from its own allowlist). A second inline
+   * path doubles that surface for a rare need, so history downloads.
+   */
+  @Get(':id/versions/:versionId/download')
+  @RequirePermissions('documents.read')
+  async downloadVersion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('versionId', ParseUUIDPipe) versionId: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const { stream, version } = await this.documents.openVersionForDownload(
+      id,
+      versionId,
+      contextOf(request),
+    );
+
+    response.setHeader('Content-Type', version.mimeType);
+    response.setHeader('Content-Length', version.size.toString());
+    response.setHeader('Content-Disposition', contentDisposition(version.originalName, false));
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+
+    stream.pipe(response);
+  }
+
+  /**
+   * Archive and its inverse.
+   *
+   * Gated on `documents.update` rather than a permission of their own: archiving
+   * is reversible and strictly less destructive than the delete a Member already
+   * holds, so a new permission Member lacked would be incoherent.
+   */
+  @Post(':id/archive')
+  @RequirePermissions('documents.update')
+  archive(@Param('id', ParseUUIDPipe) id: string, @Req() request: Request) {
+    return this.documents.archive(id, contextOf(request));
+  }
+
+  @Post(':id/unarchive')
+  @RequirePermissions('documents.update')
+  unarchive(@Param('id', ParseUUIDPipe) id: string, @Req() request: Request) {
+    return this.documents.unarchive(id, contextOf(request));
   }
 
   /**

@@ -327,12 +327,40 @@ function NotificationItem({
       : t.system,
   });
 
+  /**
+   * Where this notification came from, not merely which screen it belongs to.
+   *
+   * Until v4 every document notification landed on `/documents` — the list —
+   * because there was no detail route to point at. There is now, so a
+   * notification about one document opens THAT document; sending someone to a
+   * list of ten thousand rows and expecting them to find the one they were just
+   * told about is not a link, it is a hint.
+   *
+   * The comment and version notifications go one step further and name the tab,
+   * because "{actor} commented on X" that opens the file preview has still not
+   * shown the reader the thing they clicked for.
+   *
+   * `payload.documentId` is preferred over `entityId`: for a comment the entity
+   * IS the document already, but keeping the payload first means a future
+   * notification whose entity is something else still links to the right file.
+   */
   const documentId = notification.payload?.documentId ?? notification.entityId;
+
+  const tab =
+    notification.type === 'DOCUMENT_COMMENTED'
+      ? '?tab=comments'
+      : notification.type === 'DOCUMENT_VERSION_ADDED'
+        ? '?tab=versions'
+        : '';
+
   const href =
     notification.entityType === 'Document' && documentId
-      ? `/${lang}/documents`
+      ? `/${lang}/documents/${documentId}${tab}`
       : notification.type.startsWith('APPROVAL')
-        ? `/${lang}/approvals`
+        ? // Approvals stay on the queue: the notification asks you to DECIDE, and
+          // deciding is what that screen is for. The document is one click on
+          // from there.
+          `/${lang}/approvals`
         : null;
 
   const body = (

@@ -4,27 +4,11 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
+import { Avatar } from '@/components/ui/avatar';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import { cn } from '@/lib/cn';
 import { DURATION, EASE } from '@/lib/motion';
-
-/**
- * Initials for the avatar.
- *
- * Takes the first character of each name rather than slicing a fixed count —
- * Arabic and Latin scripts both work, and `codePointAt` keeps a surrogate pair
- * intact where a plain `[0]` would render half of one.
- */
-function initials(first: string, last: string): string {
-  const take = (value: string) => {
-    const trimmed = value.trim();
-    const code = trimmed.codePointAt(0);
-    return code === undefined ? '' : String.fromCodePoint(code);
-  };
-
-  return `${take(first)}${take(last)}`.toUpperCase() || '?';
-}
 
 export function UserMenu({ lang, t }: { lang: Locale; t: Dictionary['app'] }) {
   const { user, logout } = useSession();
@@ -66,6 +50,13 @@ export function UserMenu({ lang, t }: { lang: Locale; t: Dictionary['app'] }) {
 
   return (
     <div ref={container} className="relative">
+      {/*
+        The button is a bare hit target and Avatar carries the whole look, so the
+        hover state has to cross the boundary — hence `group` here and
+        `group-hover:` there. The alternative, duplicating the avatar's fill and
+        border on the button, is how the account menu drifted away from the
+        members list in the first place.
+      */}
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -74,14 +65,16 @@ export function UserMenu({ lang, t }: { lang: Locale; t: Dictionary['app'] }) {
         aria-controls={open ? menuId : undefined}
         aria-label={t.account}
         className={cn(
-          'flex size-9 items-center justify-center rounded-full',
-          'bg-accent-subtle text-xs font-semibold text-accent',
-          'border border-accent-border transition-colors duration-fast ease-out-quint',
-          'hover:bg-accent hover:text-accent-fg',
+          'group flex rounded-full',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
         )}
       >
-        <span aria-hidden="true">{initials(user.firstName, user.lastName)}</span>
+        <Avatar
+          firstName={user.firstName}
+          lastName={user.lastName}
+          tone="accent"
+          className="group-hover:bg-accent group-hover:text-accent-fg transition-colors duration-fast ease-out-quint"
+        />
       </button>
 
       <AnimatePresence>

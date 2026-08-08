@@ -128,4 +128,58 @@ npm run typecheck
 npm test
 ```
 
-These fan out across workspaces and no-op cleanly while `apps/` is empty.
+These fan out across both workspaces. `npm test` covers the unit suites only —
+CI additionally runs the API's e2e suite, which boots the real AppModule, so run
+it yourself for anything touching a controller, the tenant guard, or the schema:
+
+```bash
+npm run infra:up
+npm run test:e2e --workspace=@docuflow/api
+```
+
+## Things that are easy to get wrong here
+
+Worth knowing before a first pull request; each one has bitten this repository
+already and is documented where it lives.
+
+- **Never add a manual `companyId` filter.** Isolation is a Prisma client
+  extension, and hand-filtering hides whether the guard is doing its job. Inject
+  `TENANT_PRISMA`; `PrismaService` is the raw client and is for infrastructure
+  only. Raw SQL is not covered — pin the predicate by hand and add a spec.
+- **A new tenant-scoped model must be registered in `tenant-guard.ts`.** A model
+  with a `companyId` that is missing from the list is not merely unfiltered on
+  read: the guard also stops stamping the company on create, so inserts fail.
+  `tenant-registration.spec.ts` parses `schema.prisma` and fails if one is
+  missing — it exists because this shipped undetected once.
+- **Prisma promises are lazy**, which interacts badly with `AsyncLocalStorage`.
+  Returning an unawaited query out of a context callback runs it after the scope
+  has unwound, with no tenant bound.
+- **Enqueue after the transaction commits.** Redis and Postgres share no
+  transaction, so a job picked up mid-transaction cannot see the row it names.
+- **Adding an error code means adding a translation.** `dictionaries.test.ts`
+  parses `error-codes.ts` and fails if either locale is missing an entry.
+- **Restart the web dev server after editing a dictionary.** Turbopack does not
+  hot-reload the JSON, so a new key renders as `undefined` while typecheck passes.
+- **Stop the dev server before running e2e.** `npm run dev` starts an API with
+  `QUEUE_WORKER_ENABLED` at its default of `true`; its worker consumes the jobs
+  the suite enqueues and moves those documents through the pipeline underneath
+  the assertions. `test/e2e-env.ts` puts the suite on Redis database 1 to prevent
+  it, but if you ever see status assertions failing differently on each run, this
+  is the first thing to check — it looks exactly like a regression.
+- **Do not depend on a callback prop inside an effect that sets something up.**
+  Callers pass inline arrows, so the identity changes every render and the effect
+  tears down and rebuilds continuously. `useModalBehavior` did this with
+  `onClose` and stole focus back to the first field on every keystroke, in every
+  dialog and drawer in the app. Hold the callback in a ref and key the effect on
+  what actually changed.
+- **`truncate` needs `min-w-0` on a flex item.** A flex item will not shrink
+  below its content by default, so the text overflows its container instead of
+  ellipsing. This is why a checksum hung outside its card.
+- **Derive, do not reset.** `react-hooks/set-state-in-effect` rejects setting
+  state in response to other state. Compute the value during render instead — a
+  stale selection reading as empty is the same answer without the cascading
+  render.
+
+The tenant-isolation section of the pull request template is not a formality: a
+query missing its filter behaves perfectly in single-tenant testing and leaks
+data in production.

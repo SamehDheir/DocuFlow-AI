@@ -107,6 +107,9 @@ services:
       args:
         # Baked into the client bundle at build time — see web.Dockerfile.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        # Defaults to the API's own MAX_FILE_SIZE default, so the two ceilings
+        # agree unless both are raised together.
+        NEXT_PUBLIC_MAX_FILE_SIZE: ${MAX_FILE_SIZE:-104857600}
     image: ${WEB_IMAGE:-ghcr.io/OWNER/docuflow-web:latest}
     restart: always
     environment:
