@@ -8,6 +8,7 @@ import { ActivityRow } from '@/components/activity/activity-row';
 import { useSession } from '@/components/auth/session-provider';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/config';
 import type { Dictionary } from '@/i18n/get-dictionary';
@@ -164,15 +165,12 @@ export function DashboardView({
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="visible">
-      <motion.header variants={variants}>
-        <p className="text-xs font-medium tracking-wide text-text-subtle uppercase">
-          {t.workspaceLabel}
-        </p>
-        <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          {interpolate(t.greeting, { name: profile.firstName })}
-        </h1>
-        <p className="mt-2.5 text-sm text-text-muted">{t.subtitle}</p>
-      </motion.header>
+      <PageHeader
+        variants={variants}
+        eyebrow={t.workspaceLabel}
+        title={interpolate(t.greeting, { name: profile.firstName })}
+        description={t.subtitle}
+      />
 
       <motion.dl variants={variants} className="mt-9 grid gap-4 sm:grid-cols-3">
         <Facts label={t.workspaceLabel} value={profile.company.name} hint={profile.company.slug} />

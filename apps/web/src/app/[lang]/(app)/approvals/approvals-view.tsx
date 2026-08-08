@@ -6,6 +6,7 @@ import { useSession } from '@/components/auth/session-provider';
 import { useLiveEvent } from '@/components/providers/live-provider';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Dialog } from '@/components/ui/dialog';
 import { EmptyState, DocumentGlyph } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonRegion } from '@/components/ui/skeleton';
@@ -212,13 +213,7 @@ export function ApprovalsView({
       animate="visible"
       className="flex flex-col gap-8"
     >
-      <motion.header variants={variants}>
-        <p className="text-text-subtle text-xs font-medium tracking-wide uppercase">{t.title}</p>
-        <h1 className="font-display mt-1 text-3xl tracking-tight text-balance sm:text-4xl">
-          {t.title}
-        </h1>
-        <p className="text-text-muted mt-2 max-w-2xl text-sm">{t.subtitle}</p>
-      </motion.header>
+      <PageHeader variants={variants} eyebrow={t.title} title={t.title} description={t.subtitle} />
 
       <motion.div variants={variants}>
         <Tabs

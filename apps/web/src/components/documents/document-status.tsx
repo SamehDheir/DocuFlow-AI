@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Tooltip } from '@/components/ui/tooltip';
 import type { Dictionary } from '@/i18n/get-dictionary';
 import type { DocumentStatus, ProcessingStage } from '@/lib/documents';
 
@@ -64,11 +65,18 @@ export function DocumentStatusBadge({
       return null;
     }
 
-    return (
-      <Badge tone="danger" dot className={className} title={ocrError ?? aiError ?? undefined}>
+    const reason = ocrError ?? aiError ?? undefined;
+
+    const badge = (
+      // `title` is kept alongside the tooltip rather than replaced by it. The
+      // tooltip is the designed surface; the native attribute is what a touch
+      // user, and anyone the tooltip's hover-only rule excludes, still gets.
+      <Badge tone="danger" dot className={className} title={reason}>
         {ocrStatus === 'FAILED' ? t.processing.failedText : t.processing.failedSummary}
       </Badge>
     );
+
+    return reason ? <Tooltip content={reason}>{badge}</Tooltip> : badge;
   }
 
   const tone = TONES[status] ?? 'neutral';
