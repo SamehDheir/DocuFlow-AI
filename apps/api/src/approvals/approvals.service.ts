@@ -254,7 +254,14 @@ export class ApprovalsService {
   async cancel(id: string, userId: string, companyId: string, context: RequestContext) {
     const request = await this.db.approvalRequest.findFirst({
       where: { id },
-      select: { id: true, status: true, requestedById: true, documentId: true, assigneeId: true },
+      select: {
+        id: true,
+        status: true,
+        requestedById: true,
+        documentId: true,
+        assigneeId: true,
+        document: { select: { name: true } },
+      },
     });
 
     if (!request) {
@@ -286,16 +293,37 @@ export class ApprovalsService {
       entityId: id,
       ipAddress: context.ipAddress,
       userAgent: context.userAgent,
-      metadata: { documentId: request.documentId },
+      metadata: { documentId: request.documentId, name: request.document.name },
     });
 
-    await this.announce(
-      companyId,
-      request.assigneeId ? [request.assigneeId] : [],
-      request.documentId,
-      id,
+    /**
+     * Mirrors who was told the request existed: the named assignee, or everyone
+     * who could have decided it when none was named. Anything narrower leaves a
+     * "waiting on you" item in someone's list for a request that is gone.
+     *
+     * APPROVAL_CANCELLED was declared in the enum and translated in both
+     * dictionaries from the start, but nothing ever wrote one — the withdrawal
+     * published an SSE event and an audit row and stopped there, so the item
+     * only disappeared for whoever happened to have the page open.
+     */
+    const recipients = request.assigneeId
+      ? [request.assigneeId]
+      : await this.notifications.usersWithPermission('documents.approve');
+
+    await this.notifications.createMany(
+      recipients,
+      {
+        type: NotificationType.APPROVAL_CANCELLED,
+        actorId: userId,
+        entityType: 'ApprovalRequest',
+        entityId: id,
+        payload: { name: request.document.name, documentId: request.documentId },
+      },
+      // The requester withdrew it; they do not need telling.
       userId,
     );
+
+    await this.announce(companyId, recipients, request.documentId, id, userId);
 
     return this.findOne(id);
   }

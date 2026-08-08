@@ -10,6 +10,8 @@ import { AiModule } from '../ai/ai.module';
 import { AuditModule } from '../common/audit/audit.module';
 import type { Env } from '../config/env.validation';
 import { StorageModule } from '../storage/storage.module';
+import { BulkDocumentsController } from './bulk-documents.controller';
+import { BulkDocumentsService } from './bulk-documents.service';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { PdfRasterService } from './extraction/pdf-raster.service';
@@ -70,7 +72,17 @@ const UPLOAD_TEMP_DIR = join(tmpdir(), 'docuflow-uploads');
       },
     }),
   ],
-  controllers: [DocumentsController],
+  /**
+   * ORDER MATTERS, and this is the only place it is expressed.
+   *
+   * Nest registers routes controller by controller, in this array's order.
+   * BulkDocumentsController serves `documents/bulk/<action>`, and
+   * DocumentsController declares two-segment `:id/...` patterns — `:id/restore`
+   * and `:id/archive` among them — which would match `documents/bulk/restore`
+   * with `:id` bound to "bulk" and fail in ParseUUIDPipe. Listing bulk first is
+   * what stops that; `bulk.e2e-spec.ts` is what notices if it is undone.
+   */
+  controllers: [BulkDocumentsController, DocumentsController],
   /**
    * The processing worker lives here rather than in QueueModule: it needs the
    * pipeline below, and QueueModule is already imported for the producer, so
@@ -79,6 +91,7 @@ const UPLOAD_TEMP_DIR = join(tmpdir(), 'docuflow-uploads');
    */
   providers: [
     DocumentsService,
+    BulkDocumentsService,
     PdfRasterService,
     TextExtractorService,
     DocumentProcessingService,

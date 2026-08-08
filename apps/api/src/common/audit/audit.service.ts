@@ -84,4 +84,57 @@ export class AuditService {
       this.logger.error(`Failed to write audit entry "${entry.action}"`, error);
     }
   }
+
+  /**
+   * Writes a batch as one statement.
+   *
+   * A bulk operation still owes one row PER DOCUMENT — "who deleted this file"
+   * has to be answerable about a single file, and a summary row naming fifty
+   * ids would not answer it. Looping `record()` would do that correctly and cost
+   * fifty round trips per request, so the loop lives here instead, around one
+   * `createMany`.
+   *
+   * Same failure policy as `record()`: logged and swallowed. Same bypass, for
+   * the same reason — the company is pinned explicitly below.
+   */
+  async recordMany(entries: AuditEntry[], client: AuditWriter = this.db): Promise<void> {
+    if (entries.length === 0) {
+      return;
+    }
+
+    const ambientCompanyId = this.tenant.getCompanyId();
+    const ambientUserId = this.tenant.getUserId() ?? null;
+
+    const rows = entries.flatMap((entry) => {
+      const companyId = entry.companyId ?? ambientCompanyId;
+
+      if (!companyId) {
+        this.logger.error(`Dropped audit entry "${entry.action}": no company to attribute it to`);
+        return [];
+      }
+
+      return [
+        {
+          companyId,
+          userId: entry.userId ?? ambientUserId,
+          action: entry.action,
+          entityType: entry.entityType,
+          entityId: entry.entityId ?? null,
+          ipAddress: entry.ipAddress ?? null,
+          userAgent: entry.userAgent ?? null,
+          metadata: entry.metadata as Prisma.InputJsonValue | undefined,
+        },
+      ];
+    });
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    try {
+      await this.tenant.runAsSystem(() => client.auditLog.createMany({ data: rows }));
+    } catch (error) {
+      this.logger.error(`Failed to write ${rows.length} audit entries`, error);
+    }
+  }
 }
