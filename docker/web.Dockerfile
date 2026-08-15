@@ -2,8 +2,6 @@
 #
 # Next.js web production image.
 #
-# STATUS: TEMPLATE — apps/web/ does not exist yet, so this has never been built.
-#
 # PREREQUISITE: the runtime stage below copies Next.js standalone output, which
 # Next only emits when apps/web/next.config.ts sets:
 #     output: 'standalone'
@@ -49,6 +47,14 @@ ENV NEXT_PUBLIC_MAX_FILE_SIZE=${NEXT_PUBLIC_MAX_FILE_SIZE}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build --workspace=@docuflow/web
+
+# apps/web has no public/ directory: every icon is a file-based metadata route
+# under src/app/ (icon.svg, apple-icon.tsx), which Next compiles into .next.
+# COPY fails outright on a missing source, so the runtime stage below could not
+# copy it unconditionally — and dropping that COPY would silently stop shipping
+# static assets the first time somebody adds a robots.txt. Create it instead;
+# if the directory does exist in the source tree, this is a no-op.
+RUN mkdir -p /app/apps/web/public
 
 # ------------------------------------------------------------------------------
 # Stage 3 — runtime
